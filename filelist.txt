@@ -1,0 +1,4 @@
+/media/sf_SharedFolder/Code/VQMM/data/1.mfcc	VOCAL
+/media/sf_SharedFolder/Code/VQMM/data/2.mfcc	VOCAL
+/media/sf_SharedFolder/Code/VQMM/data/3.mfcc	INSTRU
+/media/sf_SharedFolder/Code/VQMM/data/4.mfcc	INSTRU
