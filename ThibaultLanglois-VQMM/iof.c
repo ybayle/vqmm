@@ -476,7 +476,7 @@ char * RemoveExtension(char *filename) {
   int i;
   char * name;
   while (k >= 0 && filename[k] != '.') k--;
-  if (k == 0) {
+  if (k == -1) {
     // printf("****************************************************************************************\n");
     return strdup(filename);
   } else {

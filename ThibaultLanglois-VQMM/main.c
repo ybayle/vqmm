@@ -14,6 +14,10 @@
 #include "matrix.h" 
 #include "iof.h" 
 #include "string-utils.h"
+#include "error.h"
+#include "random.h"
+#include "matrand.h"
+#include "numerica2.h"
 
 static char *dataFilename = NULL;
 static char *quiet;
@@ -928,7 +932,6 @@ matrix * ClassifyListOfFilesForTagging(char * listOfFilesFilename,
     MatFree(mPmodels[i]);
     MatFree(mNmodels[i]);
   }
-  // printf("aaa\n");
   free(smodels);
   free(mPmodels);
   free(mNmodels);
@@ -1108,6 +1111,8 @@ void GlobalPrecisionRecallFscore(char ** classes,
 
 FILE * OpenOutputFileForResults(char * baseFilename, char * suffix) {
   char * filename;
+  // fprintf(stderr, "OpenOutputFileForResults. baseFilename:%s suffix: %s outputDir: %s \n",
+  //         baseFilename, suffix, outputDir);
   filename = (char *) malloc(sizeof(char) * ((outputDir == 0 ? 0 : strlen(outputDir)) +
                                              strlen(baseFilename) + 
                                              strlen(suffix) + 1));
@@ -1117,6 +1122,7 @@ FILE * OpenOutputFileForResults(char * baseFilename, char * suffix) {
     strcat(filename, baseFilename);
   }
   strcat(filename, suffix);
+  // fprintf(stderr, "filename: %s\n", filename);
   FILE * file = FileOpen(filename, "w");
   free(filename);
   return file;
@@ -1347,7 +1353,6 @@ void PresentResultsEvaluationForTagging(char * listOfFilesFilename,
   real * allFS;
   char * file;
   char * outputBaseFilename;
-  //printf("nfiles %d nEvalFiles %d\n", nfiles, nEvalFiles); exit(1);
   tmp1 = FilenameName(listOfFilesFilename);
   i = findStringPosition(".cbk", tmp1);
   if (i != -1) tmp1[i] = 0;
@@ -1508,7 +1513,7 @@ int main (int argc, char **argv) {
   matrix * tagification;
   int i,n,k;
   char **files;
-  
+
   CommandLine(argc, argv);
   if (makecodebook) {
     if (dataFilename != NULL) {
