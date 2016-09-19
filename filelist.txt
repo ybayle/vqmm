@@ -1,5 +1,5 @@
-data/processed/ES6009600005_audio_full_mono_22k.wav.mfcc.csv	S
-data/processed/GBBPB0700552_audio_full_mono_22k.wav.mfcc.csv	S
-data/processed/US5261419299_audio_full_mono_22k.wav.mfcc.csv	I
-data/processed/DEE869100068_audio_full_mono_22k.wav.mfcc.csv	I
-data/processed/FRZ016800020_audio_full_mono_22k.wav.mfcc.csv	S
+data/ES6009600005_audio_full_mono_22k.wav.mfcc.csv	S
+data/GBBPB0700552_audio_full_mono_22k.wav.mfcc.csv	S
+data/US5261419299_audio_full_mono_22k.wav.mfcc.csv	I
+data/DEE869100068_audio_full_mono_22k.wav.mfcc.csv	I
+data/FRZ016800020_audio_full_mono_22k.wav.mfcc.csv	S

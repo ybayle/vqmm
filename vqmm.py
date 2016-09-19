@@ -40,10 +40,12 @@
 #			- make available import vqmm :
 #				vqmm.vqmm with no arg launch default
 #				vqmm.vqmm(lot of args non mandatory)
+#			- Main : enhance getting of args with option
 # 
 
 import time
 begin = int(round(time.time() * 1000))
+import argparse
 import sys, getopt
 import os
 import csv
@@ -152,8 +154,8 @@ def find_between_r( s, first, last ):
 		return ""
 
 def printError(msg):
-	if PRINTDEBUG:
-		print(bcolors.BOLD + bcolors.ERROR + msg + bcolors.ENDC)
+	print(bcolors.BOLD + bcolors.ERROR + msg + bcolors.ENDC)
+	sys.exit()
 
 def printTitle(msg):
 	if PRINTDEBUG:
@@ -164,8 +166,7 @@ def printInfo(msg):
 		print(bcolors.OKBLUE + msg + bcolors.ENDC)
 
 def usage():
-	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:')
-	printError('vqmm.py ./data/ ./filelist.txt')
+	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
 def runVQMM(tmpDIR, fileListWithClass):
 	randomSeed = "75"
@@ -211,39 +212,7 @@ def runVQMM(tmpDIR, fileListWithClass):
 	else:
 		printError("Error during VQMM, no results to display, see ./analysis/ for more details.")
 
-def main(argv):
-	"""Description of main
-
-	:param argv[1]: Folder containing raw data from YAAFE
-	:param argv[2]: File containing path to previous files
-	:type argv[1]: string
-	:type argv[2]: string
-
-	:Example:
-
-	python vqmm.py /path/YAAFE/ /path/fileList.txt
-
-	.. warnings:: argv[1] must finish by '/'
-	.. note:: argv[2] must contain path followed by a tab and the item's class
-	"""
-	inDIR = ''
-	if len(sys.argv) == 2:
-		if sys.argv[1] != '-h':
-			print(bcolors.ERROR)
-			usage()
-			sys.exit()
-		else:
-			print(bcolors.OKBLUE)
-			usage()
-			sys.exit()
-	elif len(sys.argv) == 3:
-		inDIR = sys.argv[1]
-		fileWithClass = sys.argv[2]
-	else:
-		print(bcolors.ERROR)
-		usage()
-		sys.exit()
-	printInfo("Approx. 700ms per file: go grab a tea!")
+def preprocess(inDIR, fileWithClass):
 	printTitle("Starting preprocessing")
 	if inDIR[-1] != '/' or inDIR[-1] != '\\':
 		inDIR = inDIR + '/'
@@ -291,14 +260,104 @@ def main(argv):
 		resultFile.close()    
 		sys.stdout.write('\n')
 	printTitle("Preprocessing done")
-	printTitle("VQMM launched")
-	runVQMM(tmpDIR, fileListWithClass)
-	# TODO not rm tmpDIR because FileListWithClass needed for VQMM
-	# shutil.rmtree(tmpDIR)
-	printTitle("Finished")
+	return tmpDIR, fileListWithClass
+
+def gatherArgs(argv):
+	parser = argparse.ArgumentParser(description="Use extracted features from YAAFE and classify them with VQMM.")
+	parser.add_argument(
+		"-v", 
+		"--verbose", 
+		help="increase output verbosity",
+		action="store_true")
+	parser.add_argument(
+		"-i", 
+		"--invert", 
+		help="invert train and test set",
+		action="store_true")
+	parser.add_argument(
+		"-n",
+		"--nbFolds",
+		default=1,
+		type=int,
+		metavar="NBFOLDS",
+		help="number of Folds to be used for the classification, must be >= 1")
+	parser.add_argument(
+		"-d",
+		"--dir",
+		type=str,
+		metavar="DIR",
+		help="directory where YAAFE features are stored")
+	parser.add_argument(
+		"-f",
+		"--file",
+		type=str,
+		metavar="FILE",
+		help="file containing paths and classes separated by a tab")
+
+	args = parser.parse_args()
+
+	inDIR = "./data/"
+	fileWithClass = "./filelist.txt"
+	if args.dir and args.file:
+		if os.path.exists(args.dir):
+			inDIR = args.dir
+		else:
+			printError("Folder does not exists : " + args.dir)
+		if os.path.isfile(args.file):
+			fileWithClass = args.file
+		else:
+			printError("File does not exists : " + args.dir)
+	elif args.dir != args.file:
+		printError("You must input an input dir AND a filelist with paths and classes")
+	else:
+		printInfo("Using sample folder " + inDIR + " and classes stored in " + fileWithClass)
+
+	verbose = False
+	if args.verbose:
+		verbose = True
+
+	invertTrainTest = False
+	if args.invert:
+		invertTrainTest = True
+
+	nbFolds = 1
+	if args.nbFolds:
+		if args.nbFolds > 1:
+			nbFolds = args.nbFolds
+
+	return inDIR, fileWithClass, verbose, invertTrainTest, nbFolds
+
+def main(argv):
+	"""Description of main
+
+	:param argv[1]: Folder containing raw data from YAAFE
+	:param argv[2]: File containing path to previous files
+	:type argv[1]: string
+	:type argv[2]: string
+
+	:Example:
+
+	python vqmm.py /path/YAAFE/ /path/fileList.txt
+
+	.. warnings:: argv[1] must finish by '/'
+	.. note:: argv[2] must contain path followed by a tab and the item's class
+	"""
+
+	inDIR, fileWithClass, verbose, invertTrainTest, nbFolds = gatherArgs(argv)
+	printInfo("Approx. 700ms per file: go grab a tea!")
+	tmpDIR, fileListWithClass = preprocess(inDIR, fileWithClass)
+	if nbFolds == 1:
+		runVQMM(tmpDIR, fileListWithClass)
+	else:
+		printTitle("Generating random split for folds")
+		if nbFolds == 2:
+			print("TODO special computation where train on a set and test on the other")
+		elif nbFolds > 2:
+			print("TODO special computation where invertTrainTest is needed")
+		else:
+			printError("Wrong number of Folds")
 	printInfo("More details available in ./analysis/Results/")
+	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
 if __name__ == "__main__":
 	main(sys.argv[1:])
-
-print("Time to compute: " + str(int(round(time.time() * 1000)) - begin) + "ms")
