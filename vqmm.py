@@ -22,7 +22,7 @@
 # OUTPUT	1 In the folder containing all raw data :
 #				A folder named "processed/" containing all processed files
 #				An eventual folder named "error/" containing all invalid files
-#			2 In temp/ folder :
+#			2 In analysis/ folder :
 #				Models and Resulting files from VQMM analysis
 # MANUAL	1 Install YAAFE and analyse your songs in a folder ex: /path/YAAFE/
 # 			2 Download https://github.com/ybayle/vqmm
@@ -51,6 +51,7 @@ import shutil
 from os import listdir
 from os.path import isfile, join
 import subprocess
+import re
 
 PRINTDEBUG = True
 
@@ -63,6 +64,22 @@ class bcolors:
 	ENDC = '\033[0m'
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
+
+def newPath(s):
+	delimiter = '/'
+	insertStr = "processed/"
+	limit = s.rindex( delimiter ) + len( delimiter )
+	return s[:limit] + insertStr + s[limit:]
+
+def validScientificNotation(val):
+    pattern = re.compile("-?[0-9]\.[0-9]+[Ee][+-][0-9]{2}")
+    if val:
+        if pattern.match(val):
+            return True
+        else:
+            return False
+    else:
+        return False
 
 def validAndConvertFile(inDIR, outDIR, errDIR, filename):
 	inFileName = inDIR + filename
@@ -84,7 +101,11 @@ def validAndConvertFile(inDIR, outDIR, errDIR, filename):
 						if not len(row) < requiredNumCol:
 							str2write = ""
 							for col in row:
-								str2write = str2write + "{0:.14f}".format(float(col)) + " "
+								if validScientificNotation(col):
+									str2write = str2write + "{0:.14f}".format(float(col)) + " "
+								else:
+									fileInvalid = True
+									break
 							outFile.write(str2write[:-1] + "\n")
 						else:
 							fileInvalid = True
@@ -188,7 +209,7 @@ def runVQMM(tmpDIR, fileListWithClass):
 			for line in filename:
 				print(line[:-1])
 	else:
-		printError("Error during VQMM, no results to display, see ./temp/ for more details.")
+		printError("Error during VQMM, no results to display, see ./analysis/ for more details.")
 
 def main(argv):
 	"""Description of main
@@ -228,7 +249,7 @@ def main(argv):
 		inDIR = inDIR + '/'
 	outDIR = inDIR + "processed/"
 	errDIR = inDIR + "error/"
-	tmpDIR = "./temp/"
+	tmpDIR = "./analysis/"
 	if not os.path.exists(tmpDIR):
 		os.makedirs(tmpDIR)
 	tmpFileNames = tmpDIR + "files.txt"
@@ -245,7 +266,8 @@ def main(argv):
 			sys.stdout.write("\r\t" + str(curFileNum))
 			sys.stdout.flush()
 			filename = filename[:-1]
-			validAndConvertFile(inDIR, outDIR, errDIR, filename)
+			if not os.path.isdir(filename):
+				validAndConvertFile(inDIR, outDIR, errDIR, filename)
 		sys.stdout.write('\n')
 		sys.stdout.flush()
 	printTitle("Associating classes")
@@ -264,7 +286,7 @@ def main(argv):
 			sys.stdout.flush()
 			tmpLine = find_between_r( line, "/", "\t" ) + "\n"
 			if tmpLine in linesNoClass:
-				resultFile.write(line)
+				resultFile.write(newPath(line))
 	finally:
 		resultFile.close()    
 		sys.stdout.write('\n')
@@ -274,7 +296,7 @@ def main(argv):
 	# TODO not rm tmpDIR because FileListWithClass needed for VQMM
 	# shutil.rmtree(tmpDIR)
 	printTitle("Finished")
-	printInfo("More details available in ./temp/Results/")
+	printInfo("More details available in ./analysis/Results/")
 
 if __name__ == "__main__":
 	main(sys.argv[1:])
