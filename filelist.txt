@@ -1,5 +1,8 @@
-data/ES6009600005_audio_full_mono_22k.wav.mfcc.csv	S
-data/GBBPB0700552_audio_full_mono_22k.wav.mfcc.csv	S
-data/US5261419299_audio_full_mono_22k.wav.mfcc.csv	I
+data/ATE060001110_audio_full_mono_22k.wav.mfcc.csv	I
 data/DEE869100068_audio_full_mono_22k.wav.mfcc.csv	I
-data/FRZ016800020_audio_full_mono_22k.wav.mfcc.csv	S
+data/FR10S1479002_audio_full_mono_22k.wav.mfcc.csv	S
+data/GBBPB0700552_audio_full_mono_22k.wav.mfcc.csv	I
+data/INS171401047_audio_full_mono_22k.wav.mfcc.csv	S
+data/NLF050390166_audio_full_mono_22k.wav.mfcc.csv	I
+data/PHA030502152_audio_full_mono_22k.wav.mfcc.csv	S
+data/USAHF1300181_audio_full_mono_22k.wav.mfcc.csv	S

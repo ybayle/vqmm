@@ -39,8 +39,10 @@
 #			- Assert
 #			- make available import vqmm :
 #				vqmm.vqmm with no arg launch default
-#				vqmm.vqmm(lot of args non mandatory)
-#			- Main : enhance getting of args with option
+#				vqmm.vqmm(lot of tmpArgs non mandatory)
+#			- Main : enhance getting of tmpArgs with option
+#			- parameterized VQMM folder and epsilon for codebook
+#			- modifier global var verbose quand -v est active
 # 
 
 import time
@@ -54,7 +56,10 @@ from os import listdir
 from os.path import isfile, join
 import subprocess
 import re
+import numpy as np
+import json
 
+VERBOSE = False
 PRINTDEBUG = True
 
 class bcolors:
@@ -67,28 +72,30 @@ class bcolors:
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
 
-def newPath(s):
+def extractPathAndClass(s):
 	delimiter = '/'
 	insertStr = "processed/"
 	limit = s.rindex( delimiter ) + len( delimiter )
-	return s[:limit] + insertStr + s[limit:]
+	line = s[:limit] + insertStr + s[limit:]
+	index = line.index('\t')
+	return line[:index], line[index+1:-1]
 
 def validScientificNotation(val):
-    pattern = re.compile("-?[0-9]\.[0-9]+[Ee][+-][0-9]{2}")
-    if val:
-        if pattern.match(val):
-            return True
-        else:
-            return False
-    else:
-        return False
+	pattern = re.compile("-?[0-9]\.[0-9]+[Ee][+-][0-9]{2}")
+	if val:
+		if pattern.match(val):
+			return True
+		else:
+			return False
+	else:
+		return False
 
 def validAndConvertFile(inDIR, outDIR, errDIR, filename):
 	inFileName = inDIR + filename
 	errFileName = errDIR + filename
 	# Remove empty file or with too few lines to be analyzed
 	if os.stat(inFileName).st_size > 4000:
-		# Above line is slightly faster (20µs) than 
+		# Above line is slightly faster (20microsec) than 
 		# os.stat(inFileName).st_size
 		outFileName = outDIR + filename
 		outFile = open(outFileName, 'w')
@@ -154,30 +161,45 @@ def find_between_r( s, first, last ):
 		return ""
 
 def printError(msg):
-	print(bcolors.BOLD + bcolors.ERROR + msg + bcolors.ENDC)
+	print(bcolors.BOLD + bcolors.ERROR + "ERROR:\n" + msg + "\nProgram stopped" + bcolors.ENDC)
 	sys.exit()
 
 def printTitle(msg):
 	if PRINTDEBUG:
 		print(bcolors.BOLD + bcolors.OKGREEN + msg + bcolors.ENDC)
 
+def printMsg(msg):
+	if VERBOSE:
+		print(bcolors.HEADER + msg + bcolors.ENDC)
+
 def printInfo(msg):
 	if PRINTDEBUG:
 		print(bcolors.OKBLUE + msg + bcolors.ENDC)
 
+def printWarning(msg):
+	if PRINTDEBUG:
+		print(bcolors.WARNING + msg + bcolors.ENDC)
+
 def usage():
 	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
-def runVQMM(tmpDIR, fileListWithClass):
-	randomSeed = "75"
-	codebookSize = "50"
-	codebookFile = tmpDIR + "CAL500.TOP97.r50.fold1.cbk"
+def runVQMM(*arg):
+	args = arg[0]
+	fileListWithClass = args["fileListWithClass"]
+	if len(arg) == 1:
+		trainFileList = fileListWithClass
+		testFileList = fileListWithClass
+	else:
+		trainFileList = arg[1]
+		testFileList = arg[2]
+	tmpDIR = args["tmpDIR"]
+	randomSeed = str(args["randSeedCbk"])
+	codebookSize = str(args["cbkSize"])
+	codebookFile = tmpDIR + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
-	modelsDir = tmpDIR + "Models/CAL500.TOP97-r50.s75/"
-	modelsFile = tmpDIR + "CAL500.TOP97.r50.s75.fold1234.cbkCAL500.ALL.YMFCC2.r50.s75.models.csv"
-	tmpModels = tmpDIR + "tmpCAL500.TOP97.r50.s75.fold1234.cbkCAL500.ALL.YMFCC2.r50.s75.models.csv"
-	if not os.path.exists(tmpDIR + "Models/"):
-		os.makedirs(tmpDIR + "Models/")
+	modelsFile = tmpDIR + "Models.csv"
+	tmpModels = tmpDIR + "tmpModels.csv"
+	modelsDir = tmpDIR + "Models/"
 	if not os.path.exists(modelsDir):
 		os.makedirs(modelsDir)
 	
@@ -188,19 +210,20 @@ def runVQMM(tmpDIR, fileListWithClass):
 	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
 	
 	printTitle("Training Model")
-	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
+	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
 	os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
 	os.system("sed -n '/NOT_/!p' " + tmpModels + " >> " + modelsFile)
+	os.remove(tmpModels)
 	
 	printTitle("Testing Model")
 	if not os.path.exists(resultsDir):
 		os.makedirs(resultsDir)
 	printInfo("Approx 515ms per file")
-	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', fileListWithClass])
+	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
 	
 	printTitle("Results:")
-	resultFile1 = resultsDir + "CAL500.TOP97.r50.fold1.cbkCAL500.TOP97.r50.fold1.summary.txt"
-	resultFile2 = resultsDir + "CAL500.TOP97.r50.fold1.cbkCAL500.TOP97.r50.fold1.perTag.txt"
+	resultFile1 = resultsDir + "filelist.cbkcodebook.summary.txt"
+	resultFile2 = resultsDir + "filelist.cbkcodebook.perTag.txt"
 	if os.path.isfile(resultFile1):
 		with open(resultFile1, 'r') as filename:
 			for line in filename:
@@ -212,42 +235,59 @@ def runVQMM(tmpDIR, fileListWithClass):
 	else:
 		printError("Error during VQMM, no results to display, see ./analysis/ for more details.")
 
-def preprocess(inDIR, fileWithClass):
+def preprocess(args):
 	printTitle("Starting preprocessing")
-	if inDIR[-1] != '/' or inDIR[-1] != '\\':
+	inDIR = args["inDIR"]
+	fileWithClass = args["fileWithClass"]
+	if inDIR[-1] != '/' and inDIR[-1] != '\\':
 		inDIR = inDIR + '/'
-	outDIR = inDIR + "processed/"
 	errDIR = inDIR + "error/"
-	tmpDIR = "./analysis/"
+	outDIR = inDIR + "processed/"		
+	projName = inDIR[:-1]
+	projName = projName[projName.rindex("/")+1:] + "_"
+	projName = projName + str(args["cbkSize"]) + "cbkSize_"
+	projName = projName + str(args["randSeedCbk"]) + "RandCbk_"
+	projName = projName + str(args["randSeedFold"]) + "RandFold_"
+	projName = projName + str(args["nbFolds"]) + "Fold"
+	if args["nbFolds"] > 1:
+		projName = projName + "s"
+	if args["invertTrainTest"]:
+		projName = projName + "_I"
+	args["projName"] = projName
+	tmpDIR = "./analysis/" + projName + "/"
+	if not os.path.exists("./analysis/"):
+		os.makedirs("./analysis/")
 	if not os.path.exists(tmpDIR):
 		os.makedirs(tmpDIR)
+	else:
+		printError("A project with same params exists")
 	tmpFileNames = tmpDIR + "files.txt"
-	os.system("ls " + inDIR + " > " + tmpFileNames)
-	# Previous line is 32 times faster than
-	# filesInDir = [f for f in listdir(inDIR) if isfile(join(inDIR, f))]
+	fileListWithClassJSON = tmpDIR + "filelist.json"
+	fileListWithClass = "./analysis/filelist.csv"
+
 	if not os.path.exists(outDIR):
+		os.system("ls " + inDIR + " > " + tmpFileNames)
 		os.makedirs(outDIR)
-	printTitle("Validating and converting files")
-	with open(tmpFileNames, 'r') as filenames:
-		curFileNum = 0
-		for filename in filenames:
-			curFileNum = curFileNum + 1
-			sys.stdout.write("\r\t" + str(curFileNum))
+		printTitle("Validating and converting files")
+		with open(tmpFileNames, 'r') as filenames:
+			curFileNum = 0
+			for filename in filenames:
+				curFileNum = curFileNum + 1
+				sys.stdout.write("\r\t" + str(curFileNum))
+				sys.stdout.flush()
+				filename = filename[:-1]
+				if not os.path.isdir(filename):
+					validAndConvertFile(inDIR, outDIR, errDIR, filename)
+			sys.stdout.write('\n')
 			sys.stdout.flush()
-			filename = filename[:-1]
-			if not os.path.isdir(filename):
-				validAndConvertFile(inDIR, outDIR, errDIR, filename)
-		sys.stdout.write('\n')
-		sys.stdout.flush()
-	printTitle("Associating classes")
-	os.system("ls " + outDIR + " > " + tmpFileNames)
-	with open(tmpFileNames) as f:
-		linesNoClass = f.readlines()
-	with open(fileWithClass) as f:
-		linesWithClass = f.readlines()
-	fileListWithClass = tmpDIR + "CAL500.TOP97.r50.fold1.cbkCAL500.ALL.YMFCC2.r50.s75.csv"
-	resultFile = open(fileListWithClass, "w")
-	try:
+		printTitle("Associating classes")
+		os.system("ls " + outDIR + " > " + tmpFileNames)
+		with open(tmpFileNames) as f:
+			linesNoClass = f.readlines()
+		os.remove(tmpFileNames)
+		with open(fileWithClass) as f:
+			linesWithClass = f.readlines()
+		classes = None
 		curLine = 0
 		for line in linesWithClass:
 			curLine = curLine + 1
@@ -255,17 +295,47 @@ def preprocess(inDIR, fileWithClass):
 			sys.stdout.flush()
 			tmpLine = find_between_r( line, "/", "\t" ) + "\n"
 			if tmpLine in linesNoClass:
-				resultFile.write(newPath(line))
-	finally:
-		resultFile.close()    
+				itemPath, itemClass = extractPathAndClass(line)
+				if not classes:
+					classes = {itemClass: [itemPath]}
+				elif not itemClass in classes:
+					classes[itemClass] = [itemPath]
+				else:
+					classes[itemClass].append(itemPath)
 		sys.stdout.write('\n')
-	printTitle("Preprocessing done")
-	return tmpDIR, fileListWithClass
+		if args["nbFolds"] > 1:
+			with open(fileListWithClassJSON, 'w') as fp:
+				json.dump(classes, fp, sort_keys=True, indent=2)
+		for key in classes:
+			with open(fileListWithClass, 'a') as fp:
+				for line in classes[key]:
+					fp.write(str(line) + "\t" + str(key) + "\n")
+		printTitle("Preprocessing done")
+	else:
+		classes = None
+		with open(fileListWithClass, 'r') as fp:
+			for line in fp:
+				itemPath, itemClass = extractPathAndClass(line)
+				if not classes:
+					classes = {itemClass: [itemPath]}
+				elif not itemClass in classes:
+					classes[itemClass] = [itemPath]
+				else:
+					classes[itemClass].append(itemPath)
+		with open(fileListWithClassJSON, 'w') as fp:
+			json.dump(classes, fp, sort_keys=True, indent=2)
+		printTitle("Files already preprocessed")
+
+	args["tmpDIR"] = tmpDIR
+	args["fileListWithClass"] = fileListWithClass
+	args["fileListWithClassJSON"] = fileListWithClassJSON
+
+	return args
 
 def gatherArgs(argv):
 	parser = argparse.ArgumentParser(description="Use extracted features from YAAFE and classify them with VQMM.")
 	parser.add_argument(
-		"-v", 
+		"-v",
 		"--verbose", 
 		help="increase output verbosity",
 		action="store_true")
@@ -274,13 +344,6 @@ def gatherArgs(argv):
 		"--invert", 
 		help="invert train and test set",
 		action="store_true")
-	parser.add_argument(
-		"-n",
-		"--nbFolds",
-		default=1,
-		type=int,
-		metavar="NBFOLDS",
-		help="number of Folds to be used for the classification, must be >= 1")
 	parser.add_argument(
 		"-d",
 		"--dir",
@@ -293,39 +356,114 @@ def gatherArgs(argv):
 		type=str,
 		metavar="FILE",
 		help="file containing paths and classes separated by a tab")
-
-	args = parser.parse_args()
-
+	parser.add_argument(
+		"-n",
+		"--nbFolds",
+		default=1,
+		type=int,
+		metavar="NBFOLDS",
+		help="number of Folds to be used for the classification, must be >= 1")
+	parser.add_argument(
+		"-r",
+		"--randFolds",
+		default=28,
+		type=int,
+		metavar="RANDFOLDS",
+		help="random seed used for splitting folds")
+	parser.add_argument(
+		"-s",
+		"--seedCbk",
+		type=int,
+		metavar="SEEDCBK",
+		help="random seed for vqmm codebook")
+	parser.add_argument(
+		"-c",
+		"--cbkSize",
+		type=int,
+		metavar="CBKSIZE",
+		help="size of the codebook")
+	tmpArgs = parser.parse_args()
 	inDIR = "./data/"
 	fileWithClass = "./filelist.txt"
-	if args.dir and args.file:
-		if os.path.exists(args.dir):
-			inDIR = args.dir
-		else:
-			printError("Folder does not exists : " + args.dir)
-		if os.path.isfile(args.file):
-			fileWithClass = args.file
-		else:
-			printError("File does not exists : " + args.dir)
-	elif args.dir != args.file:
-		printError("You must input an input dir AND a filelist with paths and classes")
-	else:
-		printInfo("Using sample folder " + inDIR + " and classes stored in " + fileWithClass)
-
 	verbose = False
-	if args.verbose:
+	if tmpArgs.verbose:
 		verbose = True
-
+		VERBOSE = True
 	invertTrainTest = False
-	if args.invert:
+	if tmpArgs.invert:
 		invertTrainTest = True
-
 	nbFolds = 1
-	if args.nbFolds:
-		if args.nbFolds > 1:
-			nbFolds = args.nbFolds
+	if tmpArgs.nbFolds:
+		if tmpArgs.nbFolds >= 1:
+			nbFolds = tmpArgs.nbFolds
+		else:
+			printError("Wrong number of Folds")
+	randSeedFold = 1
+	if tmpArgs.randFolds:
+		randSeedFold = tmpArgs.randFolds
+	randSeedCbk = 50
+	if tmpArgs.seedCbk:
+		randSeedCbk = tmpArgs.seedCbk
+	cbkSize = 75
+	if tmpArgs.cbkSize:
+		cbkSize = tmpArgs.cbkSize
 
-	return inDIR, fileWithClass, verbose, invertTrainTest, nbFolds
+	if tmpArgs.dir and tmpArgs.file:
+		if os.path.exists(tmpArgs.dir):
+			inDIR = tmpArgs.dir
+		else:
+			printError("Folder does not exists : " + tmpArgs.dir)
+		if os.path.isfile(tmpArgs.file):
+			fileWithClass = tmpArgs.file
+		else:
+			printError("File does not exists : " + tmpArgs.dir)
+	elif tmpArgs.dir != tmpArgs.file:
+		printError("You must input an input dir AND a filelist with paths and classes")
+	printMsg("Sample folder " + inDIR)
+	printMsg("Path and classes stored in " + fileWithClass)
+	printMsg("Number of Folds " + str(nbFolds))
+	printMsg("Random Seed for Folds " + str(randSeedFold))
+	printMsg("Random Seed for Codebook " + str(randSeedCbk))
+	printMsg("Codebook size " + str(cbkSize))
+	printMsg("Invert Train and Test Set " + str(invertTrainTest))
+
+	args = {"inDIR":inDIR}
+	args["fileWithClass"] = fileWithClass
+	args["verbose"] = verbose
+	args["invertTrainTest"] = invertTrainTest
+	args["nbFolds"] = nbFolds
+	args["randSeedFold"] = randSeedFold
+	args["randSeedCbk"] = randSeedCbk
+	args["cbkSize"] = cbkSize
+
+	return args
+
+def generateFolds(args):
+	printTitle("Generating random split for folds")
+	fileListWithClassJSON = args["fileListWithClassJSON"]
+	nbFolds = args["nbFolds"]
+	randSeedFold = args["randSeedFold"]
+	invertTrainTest = args["invertTrainTest"]
+	np.random.seed(randSeedFold)
+	with open(fileListWithClassJSON) as data_file:    
+		paths = json.load(data_file)
+	os.remove(fileListWithClassJSON)
+	for key in paths:
+		newSize = round(len(paths[key])/nbFolds)
+		selected = np.random.choice(paths[key], size=newSize, replace = False)
+		selected = [selected, list(set(paths[key]) - set(selected))]
+		for i in range(0, nbFolds):
+			with open(args["tmpDIR"] + "fold" + str(i+1) + ".csv", "a") as fold:
+				try:
+					for line in selected[i]:
+						fold.write(str(line) + "\t" + str(key) + "\n")
+				except:
+					printError("The number of folds is greater than the number of data available")
+	# if nbFolds > 2:
+	# 	if invertTrainTest:
+	# 		print("TODO special computation where 1/5 train and 4/5 test")
+	# 	else:
+	# 		print("TODO special computation where 4/5 train and 1/5 test")
 
 def main(argv):
 	"""Description of main
@@ -342,21 +480,15 @@ def main(argv):
 	.. warnings:: argv[1] must finish by '/'
 	.. note:: argv[2] must contain path followed by a tab and the item's class
 	"""
-
-	inDIR, fileWithClass, verbose, invertTrainTest, nbFolds = gatherArgs(argv)
+	args = gatherArgs(argv)
 	printInfo("Approx. 700ms per file: go grab a tea!")
-	tmpDIR, fileListWithClass = preprocess(inDIR, fileWithClass)
-	if nbFolds == 1:
-		runVQMM(tmpDIR, fileListWithClass)
+	args = preprocess(args)
+	if args["nbFolds"] == 1:
+		runVQMM(args)
 	else:
-		printTitle("Generating random split for folds")
-		if nbFolds == 2:
-			print("TODO special computation where train on a set and test on the other")
-		elif nbFolds > 2:
-			print("TODO special computation where invertTrainTest is needed")
-		else:
-			printError("Wrong number of Folds")
-	printInfo("More details available in ./analysis/Results/")
+		generateFolds(args)
+		printWarning("TODO : runVQMM on new folds")
+	printInfo("More details available in ./analysis/")
 	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
 if __name__ == "__main__":
