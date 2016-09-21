@@ -517,27 +517,34 @@ def generateFolds(args):
 	with open(fileListWithClassJSON) as data_file:    
 		paths = json.load(data_file)
 	os.remove(fileListWithClassJSON)
+	tmpSelected = []
+	for i in range(0,args["nbFolds"]):
+		tmpSelected.append([])
 	for key in paths:
 		newSize = int(round(len(paths[key])/nbFolds))
+		if 0 == newSize:
+			printError("The number of folds is greater than the number of data available")
 		selected = np.random.choice(paths[key], size=newSize, replace = False)
-		selected = [selected, list(set(paths[key]) - set(selected))]
+		tmpSelected[0] = selected
+		remain = list(set(paths[key]) - set(selected))
+		for n in range(1,args["nbFolds"]-1):
+			tmpSel = np.random.choice(remain, size=newSize, replace = False)
+			sel = tmpSel
+			remain = list(set(remain) - set(sel))
+			tmpSelected[n] = sel
+		tmpSelected[-1] = remain
 		foldsName = []
 		for i in range(0, nbFolds):
 			foldFileName = args["tmpDIR"] + "fold" + str(i+1) + ".csv"
 			with open(foldFileName, "a") as fold:
 				try:
-					for line in selected[i]:
+					for line in tmpSelected[i]:
 						fold.write(str(line) + "\t" + str(key) + "\n")
 				except:
 					printError("The number of folds is greater than the number of data available")
 			foldsName.append(foldFileName)
 	args["foldsName"] = list(set(foldsName))
-	# TODO
-	# if nbFolds > 2:
-	# 	if invertTrainTest:
-	# 		print("TODO special computation where 1/5 train and 4/5 test")
-	# 	else:
-	# 		print("TODO special computation where 4/5 train and 1/5 test")
+	printWarning("TODO invert Train and Test")
 
 def main(argv):
 	"""Description of main
