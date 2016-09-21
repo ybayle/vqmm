@@ -206,7 +206,6 @@ def runVQMM(args):
 		printTitle("Creating VQMM Codebook")
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
 	
-
 	if args["nbFolds"] == 1:
 		printTitle("Training Model")
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
@@ -344,6 +343,8 @@ def preprocess(args):
 			classNames.append(key)
 		printTitle("Preprocessing done")
 	else:
+		if not os.path.isfile(fileListWithClass):
+			fileListWithClass = args["fileWithClass"]
 		with open(fileListWithClass, 'r') as fp:
 			for line in fp:
 				itemPath, itemClass = extractPathAndClass(line)
@@ -354,6 +355,12 @@ def preprocess(args):
 				else:
 					classes[itemClass].append(itemPath)
 				classNames.append(itemClass)
+		fileListWithClass = args["analysisFolder"] + "filelist.csv"
+		if not os.path.isfile(fileListWithClass):
+			for key in classes:
+				with open(fileListWithClass, 'a') as fp:
+					for line in classes[key]:
+						fp.write(str(line) + "\t" + str(key) + "\n")
 		with open(fileListWithClassJSON, 'w') as fp:
 			json.dump(classes, fp, sort_keys=True, indent=2)
 		printTitle("Files already preprocessed")
