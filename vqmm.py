@@ -4,7 +4,7 @@
 # E-mail	bayle.yann@live.fr
 # License   MIT
 # Created	09/09/2016
-# Updated	15/09/2016
+# Updated	21/09/2016
 # Version	2
 # Object	Preprocess file from YAAFE and launch VQMM from Thibault Langlois
 #			You can find the latest version of his algorithm here:
@@ -17,19 +17,11 @@
 # 			- Check that there are no empty files
 # 			- Check minimum number of frames
 # 			- All non conform files are deplaced in the error folder
-# INPUT		1 Path to folder containing all analysed raw data from YAAFE
-#			2 File containing of path to YAAFE resulsts file
-# OUTPUT	1 In the folder containing all raw data :
-#				A folder named "processed/" containing all processed files
-#				An eventual folder named "error/" containing all invalid files
-#			2 In analysis/ folder :
-#				Models and Resulting files from VQMM analysis
+#			- Manage folds and launch VQMM
 # MANUAL	1 Install YAAFE and analyse your songs in a folder ex: /path/YAAFE/
 # 			2 Download https://github.com/ybayle/vqmm
-# 			3 Launch: python vqmm.py /path/YAAFE/ /path/fileList.txt
+# 			3 Launch: python vqmm.py -d /path/YAAFE/ -f /path/fileList.txt
 # TODOs		- Optimize code: 700ms/file for 1Mo/file 4800lines/file 13feat/line
-# 			- Input params: randomseed, codebooksize, nb Folds
-#			- Manage vqmm verbose
 #			- Tell user not to use "NOT_" in his class name or better manage it
 #			- Train/Test more folds
 #			- Make parallel: preprocess, each fold and test
@@ -37,12 +29,8 @@
 # 			- X "files to classify" in main.c remove dot . and disp progression
 # 			- Enhance help and automatic produce of man and README
 #			- Assert
-#			- make available import vqmm :
-#				vqmm.vqmm with no arg launch default
-#				vqmm.vqmm(lot of tmpArgs non mandatory)
-#			- Main : enhance getting of tmpArgs with option
-#			- parameterized VQMM folder and epsilon for codebook
-#			- modifier global var verbose quand -v est active
+#			- parameterized epsilon for codebook
+#			- take in account global var verbose with -v
 # 
 
 import time
@@ -198,17 +186,6 @@ def usage():
 	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
 def runVQMM(args):
-
-	# if args["nbFolds"] == 1:
-	# 	runVQMM(args)
-	# else:
-	# 	generateFolds(args)
-	# 	if args["nbFolds"] == 2:
-	# 		runVQMM(args, args["foldsName"][0], args["foldsName"][1])
-	# 		runVQMM(args, args["foldsName"][1], args["foldsName"][0])
-	# 	else:
-	# 		printWarning("TODO : runVQMM on nb folds > 2")
-
 	fileListWithClass = args["fileListWithClass"]
 	tmpDIR = args["tmpDIR"]
 	randomSeed = str(args["randSeedCbk"])
@@ -259,8 +236,8 @@ def runVQMM(args):
 			printError("Error during VQMM, no results to display, see " + args["analysisFolder"] + " for more details.")
 	else:
 		generateFolds(args)
+		printWarning("TODO manage inversion of Train and Test Set")
 		for i in range(0, args["nbFolds"]):
-			printWarning("TODO manage invertTrainTest")
 			trainFileList = args["foldsName"][i]
 			trainOn = list(set(args["foldsName"]) - set([trainFileList]))
 			tmpNb = [str(val) for val in range(1, args["nbFolds"]+1)]
@@ -284,7 +261,6 @@ def runVQMM(args):
 			subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
 			os.remove(testFileList)
 			os.remove(modelsFile)
-
 		printTitle("Results:")
 		printWarning("TODO display fig with results")
 
@@ -544,7 +520,6 @@ def generateFolds(args):
 					printError("The number of folds is greater than the number of data available")
 			foldsName.append(foldFileName)
 	args["foldsName"] = list(set(foldsName))
-	printWarning("TODO invert Train and Test")
 
 def main(argv):
 	"""Description of main
@@ -565,15 +540,6 @@ def main(argv):
 	printInfo("Approx. 700ms per file: go grab a tea!")
 	args = preprocess(args)
 	runVQMM(args)
-	# if args["nbFolds"] == 1:
-	# 	runVQMM(args)
-	# else:
-	# 	generateFolds(args)
-	# 	if args["nbFolds"] == 2:
-	# 		runVQMM(args, args["foldsName"][0], args["foldsName"][1])
-	# 		runVQMM(args, args["foldsName"][1], args["foldsName"][0])
-	# 	else:
-	# 		printWarning("TODO : runVQMM on nb folds > 2")
 	printInfo("More details available in " + args["analysisFolder"])
 	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
