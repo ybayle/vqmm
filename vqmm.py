@@ -68,6 +68,7 @@ class bcolors:
 	OKGREEN = '\033[92m'
 	WARNING = '\033[93m'
 	ERROR = '\033[91m'
+	FILE = '\033[37m'
 	ENDC = '\033[0m'
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
@@ -75,6 +76,8 @@ class bcolors:
 def extractPathAndClass(s):
 	delimiter = '/'
 	insertStr = "processed/"
+	if insertStr in s:
+		insertStr = "" 
 	limit = s.rindex( delimiter ) + len( delimiter )
 	line = s[:limit] + insertStr + s[limit:]
 	index = line.index('\t')
@@ -180,6 +183,17 @@ def printWarning(msg):
 	if PRINTDEBUG:
 		print(bcolors.WARNING + msg + bcolors.ENDC)
 
+def printFile(fileName):
+	if os.path.isfile(fileName): 
+		printInfo(fileName + ":")
+		print(bcolors.FILE)
+		with open(fileName, 'r') as fn:
+			for line in fn:
+				print(line[:-1])
+		print(bcolors.ENDC)
+	else:
+		printWarning("File not found: " + fileName)
+
 def usage():
 	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
@@ -195,7 +209,7 @@ def runVQMM(*arg):
 	tmpDIR = args["tmpDIR"]
 	randomSeed = str(args["randSeedCbk"])
 	codebookSize = str(args["cbkSize"])
-	codebookFile = tmpDIR + "codebook.cbk"
+	codebookFile = args["analysisFolder"] + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
 	modelsFile = tmpDIR + "Models.csv"
 	tmpModels = tmpDIR + "tmpModels.csv"
@@ -204,13 +218,16 @@ def runVQMM(*arg):
 		os.makedirs(modelsDir)
 	
 	printTitle("Compiling VQMM")
-	os.system("make -C ./ThibaultLanglois-VQMM/")
+	os.system("make -C " + args["pathVQMM"])
 
-	printTitle("Creating VQMM Codebook")
-	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
+	if os.path.isfile(codebookFile):
+		printTitle("VQMM Codebook already created")
+	else:
+		printTitle("Creating VQMM Codebook")
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
 	
 	printTitle("Training Model")
-	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
+	subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
 	os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
 	os.system("sed -n '/NOT_/!p' " + tmpModels + " >> " + modelsFile)
 	os.remove(tmpModels)
@@ -219,21 +236,19 @@ def runVQMM(*arg):
 	if not os.path.exists(resultsDir):
 		os.makedirs(resultsDir)
 	printInfo("Approx 515ms per file")
-	subprocess.call(['./ThibaultLanglois-VQMM/vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
+	subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
 	
 	printTitle("Results:")
-	resultFile1 = resultsDir + "filelist.cbkcodebook.summary.txt"
-	resultFile2 = resultsDir + "filelist.cbkcodebook.perTag.txt"
-	if os.path.isfile(resultFile1):
-		with open(resultFile1, 'r') as filename:
-			for line in filename:
-				print(line[:-1])
-	if os.path.isfile(resultFile2):
-		with open(resultFile2, 'r') as filename:
-			for line in filename:
-				print(line[:-1])
-	else:
-		printError("Error during VQMM, no results to display, see ./analysis/ for more details.")
+	displayedRes = False
+	for fileName in os.listdir(resultsDir):
+		if fileName.endswith("summary.txt"):
+			printFile(resultsDir+fileName)
+			displayedRes = True
+		elif fileName.endswith("perTag.txt"):
+			printFile(resultsDir+fileName)
+			displayedRes = True
+	if not displayedRes:
+		printError("Error during VQMM, no results to display, see " + args["analysisFolder"] + " for more details.")
 
 def preprocess(args):
 	printTitle("Starting preprocessing")
@@ -242,7 +257,7 @@ def preprocess(args):
 	if inDIR[-1] != '/' and inDIR[-1] != '\\':
 		inDIR = inDIR + '/'
 	errDIR = inDIR + "error/"
-	outDIR = inDIR + "processed/"		
+	outDIR = inDIR + "processed/"
 	projName = inDIR[:-1]
 	projName = projName[projName.rindex("/")+1:] + "_"
 	projName = projName + str(args["cbkSize"]) + "cbkSize_"
@@ -254,16 +269,16 @@ def preprocess(args):
 	if args["invertTrainTest"]:
 		projName = projName + "_I"
 	args["projName"] = projName
-	tmpDIR = "./analysis/" + projName + "/"
-	if not os.path.exists("./analysis/"):
-		os.makedirs("./analysis/")
+	tmpDIR = args["analysisFolder"] + projName + "/"
+	if not os.path.exists(args["analysisFolder"]):
+		os.makedirs(args["analysisFolder"])
 	if not os.path.exists(tmpDIR):
 		os.makedirs(tmpDIR)
 	else:
 		printError("A project with same params exists")
 	tmpFileNames = tmpDIR + "files.txt"
 	fileListWithClassJSON = tmpDIR + "filelist.json"
-	fileListWithClass = "./analysis/filelist.csv"
+	fileListWithClass = args["analysisFolder"] + "filelist.csv"
 
 	if not os.path.exists(outDIR):
 		os.system("ls " + inDIR + " > " + tmpFileNames)
@@ -382,7 +397,16 @@ def gatherArgs(argv):
 		type=int,
 		metavar="CBKSIZE",
 		help="size of the codebook")
+	parser.add_argument(
+		"-p",
+		"--pathVQMM",
+		type=str,
+		metavar="PATHVQMM",
+		help="path to Thibault Langlois' VQMM folder")
 	tmpArgs = parser.parse_args()
+	pathVQMM = "./ThibaultLanglois-VQMM/"
+	if tmpArgs.pathVQMM:
+		pathVQMM = tmpArgs.pathVQMM
 	inDIR = "./data/"
 	fileWithClass = "./filelist.txt"
 	verbose = False
@@ -426,6 +450,7 @@ def gatherArgs(argv):
 	printMsg("Random Seed for Codebook " + str(randSeedCbk))
 	printMsg("Codebook size " + str(cbkSize))
 	printMsg("Invert Train and Test Set " + str(invertTrainTest))
+	printMsg("Path to Thibault Langlois' VQMM folder " + pathVQMM)
 
 	args = {"inDIR":inDIR}
 	args["fileWithClass"] = fileWithClass
@@ -435,6 +460,8 @@ def gatherArgs(argv):
 	args["randSeedFold"] = randSeedFold
 	args["randSeedCbk"] = randSeedCbk
 	args["cbkSize"] = cbkSize
+	args["pathVQMM"] = pathVQMM
+	args["analysisFolder"] = "./analysis/"
 
 	return args
 
@@ -452,13 +479,17 @@ def generateFolds(args):
 		newSize = round(len(paths[key])/nbFolds)
 		selected = np.random.choice(paths[key], size=newSize, replace = False)
 		selected = [selected, list(set(paths[key]) - set(selected))]
+		foldsName = []
 		for i in range(0, nbFolds):
-			with open(args["tmpDIR"] + "fold" + str(i+1) + ".csv", "a") as fold:
+			foldFileName = args["tmpDIR"] + "fold" + str(i+1) + ".csv"
+			with open(foldFileName, "a") as fold:
 				try:
 					for line in selected[i]:
 						fold.write(str(line) + "\t" + str(key) + "\n")
 				except:
 					printError("The number of folds is greater than the number of data available")
+			foldsName.append(foldFileName)
+	args["foldsName"] = list(set(foldsName))
 	# if nbFolds > 2:
 	# 	if invertTrainTest:
 	# 		print("TODO special computation where 1/5 train and 4/5 test")
@@ -487,8 +518,11 @@ def main(argv):
 		runVQMM(args)
 	else:
 		generateFolds(args)
-		printWarning("TODO : runVQMM on new folds")
-	printInfo("More details available in ./analysis/")
+		if args["nbFolds"] == 2:
+			runVQMM(args, args["foldsName"][0], args["foldsName"][1])
+		else:
+			printWarning("TODO : runVQMM on nb folds > 2")
+	printInfo("More details available in " + args["analysisFolder"])
 	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
 if __name__ == "__main__":
