@@ -197,21 +197,24 @@ def printFile(fileName):
 def usage():
 	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
-def runVQMM(*arg):
-	args = arg[0]
+def runVQMM(args):
+
+	# if args["nbFolds"] == 1:
+	# 	runVQMM(args)
+	# else:
+	# 	generateFolds(args)
+	# 	if args["nbFolds"] == 2:
+	# 		runVQMM(args, args["foldsName"][0], args["foldsName"][1])
+	# 		runVQMM(args, args["foldsName"][1], args["foldsName"][0])
+	# 	else:
+	# 		printWarning("TODO : runVQMM on nb folds > 2")
+
 	fileListWithClass = args["fileListWithClass"]
-	if len(arg) == 1:
-		trainFileList = fileListWithClass
-		testFileList = fileListWithClass
-	else:
-		trainFileList = arg[1]
-		testFileList = arg[2]
 	tmpDIR = args["tmpDIR"]
 	randomSeed = str(args["randSeedCbk"])
 	codebookSize = str(args["cbkSize"])
 	codebookFile = args["analysisFolder"] + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
-	modelsFile = tmpDIR + "Models.csv"
 	tmpModels = tmpDIR + "tmpModels.csv"
 	modelsDir = tmpDIR + "Models/"
 	if not os.path.exists(modelsDir):
@@ -226,29 +229,64 @@ def runVQMM(*arg):
 		printTitle("Creating VQMM Codebook")
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
 	
-	printTitle("Training Model")
-	subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
-	os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
-	os.system("sed -n '/NOT_/!p' " + tmpModels + " >> " + modelsFile)
-	os.remove(tmpModels)
-	
-	printTitle("Testing Model")
-	if not os.path.exists(resultsDir):
-		os.makedirs(resultsDir)
-	printInfo("Approx 515ms per file")
-	subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
-	
-	printTitle("Results:")
-	displayedRes = False
-	for fileName in os.listdir(resultsDir):
-		if fileName.endswith("summary.txt"):
-			printFile(resultsDir+fileName)
-			displayedRes = True
-		elif fileName.endswith("perTag.txt"):
-			printFile(resultsDir+fileName)
-			displayedRes = True
-	if not displayedRes:
-		printError("Error during VQMM, no results to display, see " + args["analysisFolder"] + " for more details.")
+
+	if args["nbFolds"] == 1:
+		printTitle("Training Model")
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
+		
+		modelsFile = tmpDIR + "Models.csv"
+		os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
+		os.system("sed -n '/NOT_/!p' " + tmpModels + " >> " + modelsFile)
+		os.remove(tmpModels)
+		
+		printTitle("Testing Model")
+		if not os.path.exists(resultsDir):
+			os.makedirs(resultsDir)
+		printInfo("Approx 515ms per file")
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', fileListWithClass])	
+		os.remove(modelsFile)
+
+		printTitle("Results:")
+		displayedRes = False
+		for fileName in os.listdir(resultsDir):
+			if fileName.endswith("summary.txt"):
+				printFile(resultsDir+fileName)
+				displayedRes = True
+			elif fileName.endswith("perTag.txt"):
+				printFile(resultsDir+fileName)
+				displayedRes = True
+		if not displayedRes:
+			printError("Error during VQMM, no results to display, see " + args["analysisFolder"] + " for more details.")
+	else:
+		generateFolds(args)
+		for i in range(0, args["nbFolds"]):
+			printWarning("TODO manage invertTrainTest")
+			trainFileList = args["foldsName"][i]
+			trainOn = list(set(args["foldsName"]) - set([trainFileList]))
+			tmpNb = [str(val) for val in range(1, args["nbFolds"]+1)]
+			tmpNb.remove(trainFileList[-5])
+			foldsNumber = ''.join(str(x) for x in tmpNb)
+			testFileList = args["tmpDIR"] + "testFolds_" + foldsNumber + ".csv"
+			os.system("cat " + " ".join(trainOn) + " > " + testFileList)
+
+			printTitle("Training Model")
+			subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
+			
+			modelsFile = tmpDIR + "Models" + str(i) + ".csv"
+			with open(modelsFile, 'w') as mf:
+				for className in args["classNames"]:
+					mf.write(modelsDir + className + "$"+ find_between_r(trainFileList, "/", ".") + ".mm\n")
+
+			printTitle("Testing Model")
+			if not os.path.exists(resultsDir):
+				os.makedirs(resultsDir)
+			printInfo("Approx 515ms per file")
+			subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
+			os.remove(testFileList)
+			os.remove(modelsFile)
+
+		printTitle("Results:")
+		printWarning("TODO display fig with results")
 
 def preprocess(args):
 	printTitle("Starting preprocessing")
@@ -280,6 +318,8 @@ def preprocess(args):
 	fileListWithClassJSON = tmpDIR + "filelist.json"
 	fileListWithClass = args["analysisFolder"] + "filelist.csv"
 
+	classes = None
+	classNames = []
 	if not os.path.exists(outDIR):
 		os.system("ls " + inDIR + " > " + tmpFileNames)
 		os.makedirs(outDIR)
@@ -302,7 +342,6 @@ def preprocess(args):
 		os.remove(tmpFileNames)
 		with open(fileWithClass) as f:
 			linesWithClass = f.readlines()
-		classes = None
 		curLine = 0
 		for line in linesWithClass:
 			curLine = curLine + 1
@@ -321,13 +360,14 @@ def preprocess(args):
 		if args["nbFolds"] > 1:
 			with open(fileListWithClassJSON, 'w') as fp:
 				json.dump(classes, fp, sort_keys=True, indent=2)
+
 		for key in classes:
 			with open(fileListWithClass, 'a') as fp:
 				for line in classes[key]:
 					fp.write(str(line) + "\t" + str(key) + "\n")
+			classNames.append(key)
 		printTitle("Preprocessing done")
 	else:
-		classes = None
 		with open(fileListWithClass, 'r') as fp:
 			for line in fp:
 				itemPath, itemClass = extractPathAndClass(line)
@@ -337,10 +377,12 @@ def preprocess(args):
 					classes[itemClass] = [itemPath]
 				else:
 					classes[itemClass].append(itemPath)
+				classNames.append(itemClass)
 		with open(fileListWithClassJSON, 'w') as fp:
 			json.dump(classes, fp, sort_keys=True, indent=2)
 		printTitle("Files already preprocessed")
 
+	args["classNames"] = list(set(classNames))
 	args["tmpDIR"] = tmpDIR
 	args["fileListWithClass"] = fileListWithClass
 	args["fileListWithClassJSON"] = fileListWithClassJSON
@@ -476,7 +518,7 @@ def generateFolds(args):
 		paths = json.load(data_file)
 	os.remove(fileListWithClassJSON)
 	for key in paths:
-		newSize = round(len(paths[key])/nbFolds)
+		newSize = int(round(len(paths[key])/nbFolds))
 		selected = np.random.choice(paths[key], size=newSize, replace = False)
 		selected = [selected, list(set(paths[key]) - set(selected))]
 		foldsName = []
@@ -490,6 +532,7 @@ def generateFolds(args):
 					printError("The number of folds is greater than the number of data available")
 			foldsName.append(foldFileName)
 	args["foldsName"] = list(set(foldsName))
+	# TODO
 	# if nbFolds > 2:
 	# 	if invertTrainTest:
 	# 		print("TODO special computation where 1/5 train and 4/5 test")
@@ -514,14 +557,16 @@ def main(argv):
 	args = gatherArgs(argv)
 	printInfo("Approx. 700ms per file: go grab a tea!")
 	args = preprocess(args)
-	if args["nbFolds"] == 1:
-		runVQMM(args)
-	else:
-		generateFolds(args)
-		if args["nbFolds"] == 2:
-			runVQMM(args, args["foldsName"][0], args["foldsName"][1])
-		else:
-			printWarning("TODO : runVQMM on nb folds > 2")
+	runVQMM(args)
+	# if args["nbFolds"] == 1:
+	# 	runVQMM(args)
+	# else:
+	# 	generateFolds(args)
+	# 	if args["nbFolds"] == 2:
+	# 		runVQMM(args, args["foldsName"][0], args["foldsName"][1])
+	# 		runVQMM(args, args["foldsName"][1], args["foldsName"][0])
+	# 	else:
+	# 		printWarning("TODO : runVQMM on nb folds > 2")
 	printInfo("More details available in " + args["analysisFolder"])
 	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
