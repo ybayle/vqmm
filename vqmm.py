@@ -4,8 +4,8 @@
 # E-mail	bayle.yann@live.fr
 # License   MIT
 # Created	09/09/2016
-# Updated	04/10/2016
-# Version	2
+# Updated	12/10/2016
+# Version	1.0.0
 #
 # Object	Preprocess file from YAAFE and launch VQMM from Thibault Langlois
 #			You can find the latest version of his algorithm here:
@@ -56,6 +56,10 @@ import numpy as np
 import json
 import multiprocessing
 from functools import partial
+import fnmatch
+import matplotlib.pyplot as plt
+import webbrowser
+from datetime import datetime
 
 VERBOSE = False
 PRINTDEBUG = True
@@ -70,6 +74,79 @@ class bcolors:
 	ENDC = '\033[0m'
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
+
+def plotResults(dirName):
+	# Format of csv files created by VQMM:
+	#	ClassName (tag), tp, tn, fp, fn, precision, recall, fscore
+	files = []
+	for fileName in os.listdir(dirName):
+		if fnmatch.fnmatch(fileName, '*perTag.csv'):
+			files.append(fileName)
+	data = {}
+	for fileName in files:
+		with open(dirName + fileName, 'r') as res:
+			resReader = csv.reader(res, delimiter=',')
+			for row in resReader:
+				tag = row[0]
+				if tag in data:
+					data[tag]["precision"].append(row[5])
+					data[tag]["recall"].append(row[6])
+					data[tag]["fScore"].append(row[7])
+				else:
+					data[tag] = {
+						"precision":[row[5]],
+						"recall":[row[6]],
+						"fScore":[row[7]]
+					}
+
+	nbMeasure = 3
+	nbClass = len(data)
+	nbFolds = len(data[tag]["precision"])
+	dataPlot = np.zeros((nbClass, nbFolds, nbMeasure))
+	classIndex = 0
+	tagName = []
+	for tag in data:
+		tagName.append(tag)
+		dataPlot[classIndex,:,0] = data[tag]["precision"]
+		dataPlot[classIndex,:,1] = data[tag]["recall"]
+		dataPlot[classIndex,:,2] = data[tag]["fScore"] 
+		classIndex = classIndex + 1
+
+	# Figure display part
+	plt.close("all")
+	fig, axes = plt.subplots(nrows=1, ncols=nbClass, figsize=(12, 5))
+
+	# rectangular box plot
+	bplot1 = axes[0].boxplot(dataPlot[0],
+							 vert=True,   # vertical box aligmnent
+							 patch_artist=True)   # fill with color
+	bplot2 = axes[1].boxplot(dataPlot[1],
+							 vert=True,   # vertical box aligmnent
+							 patch_artist=True)   # fill with color
+
+	# fill with colors
+	colors = ['pink', 'lightblue', 'lightgreen']
+	for bplot in (bplot1, bplot2):
+		for patch, color in zip(bplot['boxes'], colors):
+			patch.set_facecolor(color)
+
+	# adding horizontal grid lines
+	index = 0
+	# tagName = ["Class 1", "Class 2"]
+	for ax in axes:
+		ax.yaxis.grid(True)
+		ax.set_ylabel('Value of measure')
+		ax.set_xlabel(tagName[index])
+		index = index + 1
+		ax.set_ylim([0.0, 1.0])
+
+	# add x-tick labels
+	plt.setp(axes, xticks=[y+1 for y in range(nbMeasure)],
+			 xticklabels=['Precision', 'Recall', 'F-Score'])
+
+	imgName = dirName + "figure.png"
+	plt.savefig(imgName, dpi=100)                                                                                
+	webbrowser.open(imgName)
 
 def extractPathAndClass(s):
 	delimiter = '/'
@@ -161,13 +238,16 @@ def find_between_r( s, first, last ):
 	except ValueError:
 		return ""
 
+def curTime():
+	return datetime.now().time().strftime("%Hh%Mm%Ss") + " "
+
 def printError(msg):
 	print(bcolors.BOLD + bcolors.ERROR + "ERROR:\n" + msg + "\nProgram stopped" + bcolors.ENDC)
 	sys.exit()
 
 def printTitle(msg):
 	if PRINTDEBUG:
-		print(bcolors.BOLD + bcolors.OKGREEN + msg + bcolors.ENDC)
+		print(bcolors.BOLD + bcolors.OKGREEN + curTime() + msg + bcolors.ENDC)
 
 def printMsg(msg):
 	if VERBOSE:
@@ -175,7 +255,7 @@ def printMsg(msg):
 
 def printInfo(msg):
 	if PRINTDEBUG:
-		print(bcolors.OKBLUE + msg + bcolors.ENDC)
+		print(bcolors.OKBLUE + curTime() + msg + bcolors.ENDC)
 
 def printWarning(msg):
 	if PRINTDEBUG:
@@ -216,7 +296,7 @@ def runTrainTestOnFold(i,args):
 	testFileList = args["tmpDIR"] + "testFolds_" + foldsNumber + ".csv"
 	os.system("cat " + " ".join(trainOn) + " > " + testFileList)
 
-	printTitle("Training Model on Fold " + str(i+1))
+	printInfo("Training Model on Fold " + str(i+1))
 	with open(args["cbkDir"]+args["projName"]+"/"+str(i)+"_train.txt", 'w') as f:
 		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
@@ -226,7 +306,7 @@ def runTrainTestOnFold(i,args):
 		for className in args["classNames"]:
 			mf.write(modelsDir + className + "$"+ find_between_r(trainFileList, "/", ".") + ".mm\n")
 
-	printTitle("Testing Model on Fold " + str(i+1))
+	printInfo("Testing Model on Fold " + str(i+1))
 	if not os.path.exists(resultsDir):
 		os.makedirs(resultsDir)
 	# printInfo("Approx 515ms per file")
@@ -234,7 +314,7 @@ def runTrainTestOnFold(i,args):
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList], stdout=f, stderr=f)
 	# os.remove(testFileList) # TODO uncomment
 	# os.remove(modelsFile) # TODO uncomment
-	printTitle("Fold " + str(i+1) + " tested")
+	printInfo("Fold " + str(i+1) + " tested")
 
 def runVQMM(args):
 	fileListWithClass = args["fileListWithClass"]
@@ -252,7 +332,7 @@ def runVQMM(args):
 	os.system("make -C " + args["pathVQMM"] + "src/")
 
 	if os.path.isfile(codebookFile):
-		printTitle("VQMM Codebook already created")
+		printTitle("VQMM Codebook already created for this codebook size")
 	else:
 		printTitle("Creating VQMM Codebook")
 		with open(args["cbkDir"]+"cbk_stderr.txt", 'w') as f:
@@ -290,14 +370,15 @@ def runVQMM(args):
 		printWarning("TODO manage inversion of Train and Test Set")
 
 		# Parallel computing on each TrainTestFolds
+		printTitle("Parallel train & test of folds")
 		partialRunTrainTestOnFold = partial(runTrainTestOnFold, args=args)
 		pool = multiprocessing.Pool(args["nbFolds"]) 
 		mandelImg = pool.map(partialRunTrainTestOnFold, range(args["nbFolds"])) #make our results with a map call
 		pool.close() #we are not adding any more processes
 		pool.join() #tell it to wait until all threads are done before going on
 
-		printTitle("Results:")
-		printWarning("TODO display fig with results")
+		printTitle("Display resulting image in default browser")
+		plotResults(resultsDir)
 
 def createDir(dirName):
 	if not os.path.exists(dirName):
@@ -307,7 +388,7 @@ def createDir(dirName):
 		return False
 
 def preprocess(args):
-	printTitle("Starting preprocessing")
+	printTitle("Preprocessing")
 	inDIR = args["inDIR"]
 	fileWithClass = args["fileWithClass"]
 	if inDIR[-1] != '/' and inDIR[-1] != '\\':
