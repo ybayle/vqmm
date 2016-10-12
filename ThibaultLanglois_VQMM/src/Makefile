@@ -1,5 +1,5 @@
 # BIN = /home/tl/bin/
-BIN = .
+BIN = ..
 # O = /home/tl/obj
 O = .
 F = -g -O3 -ansi -pedantic
@@ -13,6 +13,6 @@ vqmm: $(patsubst %.c,$(O)/%.o,$(patsubst %.cc,$(O)/%.o,$(src)))
 	$(CC) $(F) -o $(BIN)/vqmm $^ -lm
 
 clean:
-	rm -f *.o vqmm
+	rm -f *.o $(BIN)/vqmm 
 
 # TODO: include correct flags in order to optimize code.

@@ -23,6 +23,7 @@ static char *dataFilename = NULL;
 static char *quiet;
 static int codebookSize;
 static real epsilon;
+static real smoothing;
 static int randomGeneratorInitializationMethod;
 static char *codebookFilename;
 static int encode = FALSE;
@@ -51,7 +52,7 @@ static char * models;
 void PrintHelp() {
     fprintf(stderr,
          "Usage: vqmm -quiet y|n -data <data-filename> -codebook-size <n>\n"
-" -epsilon <small-value> -random new-seed > <my-filename>\n");
+" -epsilon <small-value> -smoothing <value in [0.0, 1.0]> -random new-seed > <my-filename>\n");
     fprintf(stderr, 
             "The program has 4 different modes:\n"
 "1. Codebook creation.\n"
@@ -123,6 +124,7 @@ int getCommand(int argc,
 void CommandLine(int argc, char **argv) {
   char *codebooksizestr;
   char *epsilonstr;
+  char *smoothingstr;
   char *randomstr;
   char * dimlimstr;
   int stat;
@@ -131,6 +133,7 @@ void CommandLine(int argc, char **argv) {
   output =  NULL;
   codebooksizestr = (char *) malloc(10);
   epsilonstr = (char *) malloc(20);
+  smoothingstr = (char *) malloc(20);
   /*
   if (argc < 5) {
     PrintHelp();
@@ -225,6 +228,13 @@ void CommandLine(int argc, char **argv) {
   } else {
     stat = sscanf(epsilonstr,"%lf",&epsilon);
     // printf("epsilon = %lf\n", epsilon); exit(1);
+  }
+  if (!getCommand(argc, argv, "-smoothing", &smoothingstr)) {
+    // no smoothing, use the "+epsilon method"
+    smoothing = -1;
+  } else {
+    stat = sscanf(smoothingstr,"%lf",&smoothing);
+    // printf("smoothing = %lf\n", smoothing); exit(1);
   }
   if (!getCommand(argc, argv, "-codebook", &codebookFilename)) {
     codebookFilename = 0;
@@ -349,7 +359,7 @@ matrix * MakeCodebookFromListOfFiles(char * listOfFilesFilename,
   char * filename;
   for (i = 0; i < nfiles ; i++) {
     filename = copyUntilTab(listOfFiles[i]);
-    fprintf(stderr, "Selecting samples in file [%s]\n", filename);
+    fprintf(stderr, "Selecting samples in file [%s]\r", filename);
     oneFileContent = MatLoadLimitingDim(filename);
     free(filename);
     if (oneFileContent -> imax > levelOneSampling) {
@@ -373,6 +383,7 @@ matrix * MakeCodebookFromListOfFiles(char * listOfFilesFilename,
       data = tmp;
     }
   } 
+  printf("\nDone\n");
   return MakeCodebookFromMatrix(data, size, epsilon, codebookFilename);
 }
 
@@ -482,7 +493,7 @@ matrix * MakeMarkovModelFromListOfFiles(char ** filenames, int nfiles, matrix * 
   }
   printf("Computing model using %d files\n", nfiles);
   for (i = 0; i < nfiles; i++) {
-    printf("."); fflush(stdout);
+    printf("%d/%d\r", i+1, nfiles); fflush(stdout);
     filecontent = MatLoadLimitingDim(filenames[i]);
     codes = encodematrix(filecontent, codebook);
     for (k = 1; k < filecontent->imax; k++) {
@@ -506,6 +517,60 @@ matrix * MakeMarkovModelFromListOfFiles(char ** filenames, int nfiles, matrix * 
       if (Mat(count,i,j) == 0.0) Mat(count,i,j) = epsilon;
     } 
   }
+  return count;
+}
+
+
+matrix * MakeMarkovModelFromListOfFiles_AlternateSmoothingMethod(char ** filenames, int nfiles, matrix * codebook) {
+  matrix * count = MatAlloc(codebook->imax, codebook->imax);
+  matrix * filecontent;
+  int i = 0;
+  int * codes;
+  int k = 0;
+  int j = 0;
+  real sum = 0.0;
+  if (smoothing == 0.0) {
+    Error("MakeMarkovModelFromListOfFiles_AlternateSmoothingMethod","You must set the smoothing parameter to a small value for smoothing the model.");
+    exit(1);
+  }
+  printf("Computing model using %d files\n", nfiles);
+  for (i = 0; i < nfiles; i++) {
+    printf("%d/%d\r", i+1, nfiles); fflush(stdout);
+    filecontent = MatLoadLimitingDim(filenames[i]);
+    codes = encodematrix(filecontent, codebook);
+    for (k = 1; k < filecontent->imax; k++) {
+      Mat(count, codes[k-1], codes[k]) = Mat(count, codes[k-1], codes[k]) + 1;
+    }
+    MatFree(filecontent);
+    free(codes);
+  }
+  printf("\n");
+  int * zeroCount = (int *) malloc(sizeof(int) * count->imax);
+  for (i = 0; i < count->imax; i++) {
+    sum = 0.0;
+    zeroCount[i] = 0;
+    for (j = 0; j < count->jmax; j++) {
+      sum += Mat(count, i, j);
+      if (Mat(count,i,j) == 0)
+        zeroCount[i]++;
+    }
+    if (sum != 0) {
+      for (j = 0; j < count->jmax; j++) {
+        Mat(count,i,j) = Mat(count,i,j) / sum;
+      }
+    }
+  }
+  // MatPrint(count);
+  for (i = 0; i < count->imax; i++) {
+    for (j = 0; j < count->jmax; j++) {
+      Mat(count,i,j) = Mat(count,i,j) * (1 - smoothing);
+      if (Mat(count,i,j) == 0.0)
+        Mat(count,i,j) = smoothing / zeroCount[i];
+    } 
+  }
+  // printf("----------------------------------------\n");
+  // MatPrint(count);
+  free(zeroCount);
   return count;
 }
 
@@ -609,7 +674,9 @@ void MakeModels(char * listOfFilesFilename, matrix * codebook) {
   getClasses(nfiles, fileClassPairs, &classes, &FilesPerClass, &nFilesPerClass, &nClasses);
   char *codebookName = FilenameName(codebookFilename);
   for (k = 0; k < nClasses; k++) {
-    matrix * model = MakeMarkovModelFromListOfFiles(FilesPerClass[k], nFilesPerClass[k], codebook);
+    matrix * model = (smoothing == -1 
+                      ? MakeMarkovModelFromListOfFiles(FilesPerClass[k], nFilesPerClass[k], codebook)
+                      : MakeMarkovModelFromListOfFiles_AlternateSmoothingMethod(FilesPerClass[k], nFilesPerClass[k], codebook)); 
     char * modelName = (char *) malloc(sizeof(char) * ((outputDir == 0 ? 0 : strlen(outputDir)) + 
                                                        strlen(classes[k]) + 1 +
                                                        strlen(codebookName) +
@@ -683,7 +750,9 @@ void MakeModelsForTagging(char * listOfFilesFilename, matrix * codebook) {
   char *codebookName = FilenameName(codebookFilename);
   for (k = 0; k < nClasses; k++) {
     printf("Training model for tag [%s] (%d/%d)\n", classes[k], k+1, nClasses);
-    matrix * model = MakeMarkovModelFromListOfFiles(FilesPerClass[k], nFilesPerClass[k], codebook);
+    matrix * model = (smoothing == -1 
+                      ? MakeMarkovModelFromListOfFiles(FilesPerClass[k], nFilesPerClass[k], codebook)
+                      : MakeMarkovModelFromListOfFiles_AlternateSmoothingMethod(FilesPerClass[k], nFilesPerClass[k], codebook));
     char * modelName = (char *) malloc(sizeof(char) * ((outputDir == 0 ? 0 : strlen(outputDir)) + 
                                                        strlen(classes[k]) + 1 +
                                                        strlen(codebookName) +
@@ -716,7 +785,9 @@ void MakeModelsForTagging(char * listOfFilesFilename, matrix * codebook) {
     }
     printf("Files collected for training negative model: %d\n", l);
     if (l != (nUniqueFilenames - nFilesPerClass[k])) exit(1);
-    matrix * negModel = MakeMarkovModelFromListOfFiles(negativeSamples, l, codebook);
+    matrix * negModel = (smoothing == -1 
+                         ? MakeMarkovModelFromListOfFiles(negativeSamples, l, codebook)
+                         : MakeMarkovModelFromListOfFiles_AlternateSmoothingMethod(FilesPerClass[k], nFilesPerClass[k], codebook));
     free(modelName);
     free(negativeSamples);
     modelName = (char *) malloc(sizeof(char) * ((outputDir == 0 ? 0 : strlen(outputDir)) + 
@@ -812,8 +883,6 @@ int * ClassifyListOfFiles(char * listOfFilesFilename,
       Mat(scores,j,i) = scoreFromFile(filename, mmodels[i], codebook);
       // printf("%f\t", Mat(scores,j,i));
     }
-    MatMaxInRow(scores,j,&k);
-    // printf("%d\n", k);    
     free(filename);
   }
   for (i = 0; i < nfiles; i++) {
@@ -915,7 +984,7 @@ matrix * ClassifyListOfFilesForTagging(char * listOfFilesFilename,
   for (j = 0; j < nfiles; j++) {
     // filename = copyUntilTab(fileClassPairs[j]);
     // printf("# %s\t", filename);
-    printf("[%d/%d]",j+1,nfiles); fflush(stdout);
+    printf("[%d/%d]\r",j+1,nfiles); fflush(stdout);
     for (i = 0; i < nModels; i++) {
       scoreP = scoreFromFile(filesToClassify[j], mPmodels[i], codebook);
       scoreN = scoreFromFile(filesToClassify[j], mNmodels[i], codebook);
@@ -926,6 +995,7 @@ matrix * ClassifyListOfFilesForTagging(char * listOfFilesFilename,
     // printf("%d\n", k);    
     // free(filesToClassify[j]);
   }
+  printf("\n");
   // free(filesToClassify);
   for (i = 0; i < nModels; i++) {
     free(smodels[i]);
@@ -985,7 +1055,7 @@ void PrecisionRecallFscoreForOneClassBefore(char ** classes,
       r = (tp * 1.0) / (tp + fn);
       printf("# Precision: %f\n# Recall: %f\n", p, r);
       if (p+r == 0) {
-        printf("# Precision + Recall == 0, canno compute F-Score.\n");
+        printf("# Precision + Recall == 0, cannot compute F-Score.\n");
         *precision = p; *recall = r;
       } else {
         fs = (2.0 * p * r) / (p + r);

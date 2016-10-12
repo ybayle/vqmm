@@ -4,3 +4,11 @@ ThibaultLanglois-VQMM/.hgignore
 clean.sh
 *.o
 ThibaultLanglois-VQMM/vqmm
+analysis2/
+ThibaultLanglois_VQMM/.hg/
+analysis/
+data/processed/
+data/error/
+ThibaultLanglois_VQMM/.hgignore
+*.png
+ThibaultLanglois_VQMM/scripts/
