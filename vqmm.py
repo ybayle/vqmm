@@ -201,7 +201,7 @@ def runTrainTestOnFold(i,args):
 	tmpDIR = args["tmpDIR"]
 	randomSeed = str(args["randSeedCbk"])
 	codebookSize = str(args["cbkSize"])
-	codebookFile = args["analysisFolder"] + "codebook.cbk"
+	codebookFile = args["cbkDir"] + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
 	tmpModels = tmpDIR + "tmpModels.csv"
 	modelsDir = tmpDIR + "Models/"
@@ -217,9 +217,9 @@ def runTrainTestOnFold(i,args):
 	os.system("cat " + " ".join(trainOn) + " > " + testFileList)
 
 	printTitle("Training Model on Fold " + str(i+1))
-	with open(args["analysisFolder"]+args["projName"]+"/"+str(i)+"_train.txt", 'w') as f:
-		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
-		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+	with open(args["cbkDir"]+args["projName"]+"/"+str(i)+"_train.txt", 'w') as f:
+		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
 	
 	modelsFile = tmpDIR + "Models" + str(i) + ".csv"
 	with open(modelsFile, 'w') as mf:
@@ -230,7 +230,7 @@ def runTrainTestOnFold(i,args):
 	if not os.path.exists(resultsDir):
 		os.makedirs(resultsDir)
 	# printInfo("Approx 515ms per file")
-	with open(args["analysisFolder"]+args["projName"]+"/"+str(i)+"_test.txt", 'w') as f:
+	with open(args["cbkDir"]+args["projName"]+"/"+str(i)+"_test.txt", 'w') as f:
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList], stdout=f, stderr=f)
 	# os.remove(testFileList) # TODO uncomment
 	# os.remove(modelsFile) # TODO uncomment
@@ -241,7 +241,7 @@ def runVQMM(args):
 	tmpDIR = args["tmpDIR"]
 	randomSeed = str(args["randSeedCbk"])
 	codebookSize = str(args["cbkSize"])
-	codebookFile = args["analysisFolder"] + "codebook.cbk"
+	codebookFile = args["cbkDir"] + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
 	tmpModels = tmpDIR + "tmpModels.csv"
 	modelsDir = tmpDIR + "Models/"
@@ -249,17 +249,18 @@ def runVQMM(args):
 		os.makedirs(modelsDir)
 	
 	printTitle("Compiling VQMM")
-	os.system("make -C " + args["pathVQMM"])
+	os.system("make -C " + args["pathVQMM"] + "src/")
 
 	if os.path.isfile(codebookFile):
 		printTitle("VQMM Codebook already created")
 	else:
 		printTitle("Creating VQMM Codebook")
-		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile])
+		with open(args["cbkDir"]+"cbk_stderr.txt", 'w') as f:
+			subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-list-of-files', fileListWithClass, '-random', randomSeed, '-codebook-size', codebookSize, '-codebook', codebookFile], stderr=f)
 	
 	if args["nbFolds"] == 1:
 		printTitle("Training Model")
-		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'])
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'])
 		
 		modelsFile = tmpDIR + "Models.csv"
 		os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
@@ -298,6 +299,13 @@ def runVQMM(args):
 		printTitle("Results:")
 		printWarning("TODO display fig with results")
 
+def createDir(dirName):
+	if not os.path.exists(dirName):
+		os.makedirs(dirName)
+		return True
+	else:
+		return False
+
 def preprocess(args):
 	printTitle("Starting preprocessing")
 	inDIR = args["inDIR"]
@@ -306,29 +314,35 @@ def preprocess(args):
 		inDIR = inDIR + '/'
 	errDIR = inDIR + "error/"
 	outDIR = inDIR + "processed/"
-	projName = inDIR[:-1]
-	projName = projName[projName.rindex("/")+1:] + "_"
-	projName = projName + str(args["cbkSize"]) + "cbkSize_"
-	projName = projName + str(args["randSeedCbk"]) + "RandCbk_"
-	projName = projName + str(args["epsilon"]) + "Eps_"
-	projName = projName + str(args["smoothing"]) + "Smooth_"
+
+	# Create folder and subfolders if does not exists
+	createDir(args["analysisFolder"])
+
+	args["projDir"] = args["analysisFolder"] + inDIR[:-1][inDIR[:-1].rindex("/")+1:] + "/"
+	createDir(args["projDir"])
+
+	args["cbkDir"] = args["projDir"] + "CodeBookSize_" + str(args["cbkSize"]).zfill(3) + "/"
+	createDir(args["cbkDir"])
+
+	projName = str(args["randSeedCbk"]) + "RandCbk_"
 	projName = projName + str(args["randSeedFold"]) + "RandFold_"
 	projName = projName + str(args["nbFolds"]) + "Fold"
 	if args["nbFolds"] > 1:
-		projName = projName + "s"
+		projName = projName + "s_"
+	else:
+		projName = projName + "_"
+	projName = projName + str(args["epsilon"]) + "Eps_"
+	projName = projName + str(args["smoothing"]) + "Smooth"
 	if args["invertTrainTest"]:
 		projName = projName + "_I"
 	args["projName"] = projName
-	tmpDIR = args["analysisFolder"] + projName + "/"
-	if not os.path.exists(args["analysisFolder"]):
-		os.makedirs(args["analysisFolder"])
-	if not os.path.exists(tmpDIR):
-		os.makedirs(tmpDIR)
-	else:
+	tmpDIR = args["cbkDir"] + projName + "/"
+
+	if not createDir(tmpDIR):
 		printError("A project with same params exists")
-	tmpFileNames = tmpDIR + "files.txt"
-	fileListWithClassJSON = tmpDIR + "filelist.json"
-	fileListWithClass = args["analysisFolder"] + "filelist.csv"
+	tmpFileNames = args["projDir"] + "files.txt"
+	fileListWithClassJSON = args["projDir"] + "filelist.json"
+	fileListWithClass = args["projDir"] + "filelist.csv"
 
 	classes = None
 	classNames = []
@@ -392,7 +406,7 @@ def preprocess(args):
 				else:
 					classes[itemClass].append(itemPath)
 				classNames.append(itemClass)
-		fileListWithClass = args["analysisFolder"] + "filelist.csv"
+		fileListWithClass = args["projDir"] + "filelist.csv"
 		if not os.path.isfile(fileListWithClass):
 			for key in classes:
 				with open(fileListWithClass, 'a') as fp:
@@ -487,7 +501,7 @@ def gatherArgs(argv):
 			In principle this parameter should be < 0.5 \
 			It must varies between [0.0 ; 1.0]")
 	tmpArgs = parser.parse_args()
-	pathVQMM = "./ThibaultLanglois_VQMM/src/"
+	pathVQMM = "./ThibaultLanglois_VQMM/"
 	if tmpArgs.pathVQMM:
 		pathVQMM = tmpArgs.pathVQMM
 	inDIR = "./data/"

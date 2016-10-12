@@ -827,20 +827,20 @@ void MatPrint(matrix *m)
      
      if (m != NULL)
      {
-	 printf("%dx%d \n",m->imax,m->jmax);
+	 fprintf(stderr,"%dx%d \n",m->imax,m->jmax);
 	 while (i < m->imax)
 	 {
-	     printf("%d: ",i);
+	     fprintf(stderr,"%d: ",i);
 	     while (j < m->jmax)
 	     {
 		 /* printf(" [%p] %5.5e",m->values+(i*m->imax)+j,Mat(m,i,j));*/
-		 printf(" %5.5e",Mat(m,i,j));
+		 fprintf(stderr," %5.5e",Mat(m,i,j));
 		 j++;
 	     }
 	     j=0; i++;
-	     printf("\n");
+	     fprintf(stderr,"\n");
 	 }
-	 printf("\n");
+	 fprintf(stderr,"\n");
      }
 }
 

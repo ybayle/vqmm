@@ -548,10 +548,12 @@ kMeans(const matrix *set,
 		total, set->imax, centers->jmax);
 	/* if (quiet == 0) */
 	  fprintf(stderr, " * [%d] %5.2e", z, total/set->imax/centers->jmax);
+	  fprintf(stdout, "Iteration %d\r", z);
 				/* Do this until the centers do not move */
 				/* or number of iteration = 10000 */
     } while (((total/set->imax/centers->jmax) > epsilon) && (z<10000));
     MatFrees(v,newCenters,iC,0);
+	fprintf(stdout, "\n");
     if (quiet == 0) 
       fprintf(stderr,"\nk-means: %d centers, %d iterations\n",centers->imax,z);
 				/* If the algorithm did not converge before */

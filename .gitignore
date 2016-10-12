@@ -12,3 +12,5 @@ data/error/
 ThibaultLanglois_VQMM/.hgignore
 *.png
 ThibaultLanglois_VQMM/scripts/
+analysis3/
+ThibaultLanglois_VQMM/vqmm

@@ -359,7 +359,7 @@ matrix * MakeCodebookFromListOfFiles(char * listOfFilesFilename,
   char * filename;
   for (i = 0; i < nfiles ; i++) {
     filename = copyUntilTab(listOfFiles[i]);
-    fprintf(stderr, "Selecting samples in file [%s]\r", filename);
+    fprintf(stdout, "Selecting samples in file [%s]\r", filename);
     oneFileContent = MatLoadLimitingDim(filename);
     free(filename);
     if (oneFileContent -> imax > levelOneSampling) {
@@ -383,7 +383,7 @@ matrix * MakeCodebookFromListOfFiles(char * listOfFilesFilename,
       data = tmp;
     }
   } 
-  printf("\nDone\n");
+  fprintf(stdout,"\n");
   return MakeCodebookFromMatrix(data, size, epsilon, codebookFilename);
 }
 
