@@ -44,12 +44,10 @@
 import time
 begin = int(round(time.time() * 1000))
 import argparse
-import sys, getopt
+import sys
 import os
 import csv
-import shutil 
-from os import listdir
-from os.path import isfile, join
+import shutil
 import subprocess
 import re
 import numpy as np
@@ -65,6 +63,7 @@ VERBOSE = False
 PRINTDEBUG = True
 
 class bcolors:
+	HOUR = '\033[96m'
 	HEADER = '\033[95m'
 	OKBLUE = '\033[94m'
 	OKGREEN = '\033[92m'
@@ -239,7 +238,7 @@ def find_between_r( s, first, last ):
 		return ""
 
 def curTime():
-	return datetime.now().time().strftime("%Hh%Mm%Ss") + " "
+	return bcolors.HOUR + datetime.now().time().strftime("%Hh%Mm%Ss") + " " + bcolors.ENDC
 
 def printError(msg):
 	print(bcolors.BOLD + bcolors.ERROR + "ERROR:\n" + msg + "\nProgram stopped" + bcolors.ENDC)
@@ -247,7 +246,7 @@ def printError(msg):
 
 def printTitle(msg):
 	if PRINTDEBUG:
-		print(bcolors.BOLD + bcolors.OKGREEN + curTime() + msg + bcolors.ENDC)
+		print(curTime() + bcolors.BOLD + bcolors.OKGREEN + msg + bcolors.ENDC)
 
 def printMsg(msg):
 	if VERBOSE:
@@ -255,7 +254,7 @@ def printMsg(msg):
 
 def printInfo(msg):
 	if PRINTDEBUG:
-		print(bcolors.OKBLUE + curTime() + msg + bcolors.ENDC)
+		print(curTime() + bcolors.OKBLUE + msg + bcolors.ENDC)
 
 def printWarning(msg):
 	if PRINTDEBUG:
@@ -272,18 +271,10 @@ def printFile(fileName):
 	else:
 		printWarning("File not found: " + fileName)
 
-def usage():
-	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
-
 def runTrainTestOnFold(i,args):
-	# TODO remove this duplicate :
-	fileListWithClass = args["fileListWithClass"]
 	tmpDIR = args["tmpDIR"]
-	randomSeed = str(args["randSeedCbk"])
-	codebookSize = str(args["cbkSize"])
 	codebookFile = args["cbkDir"] + "codebook.cbk"
 	resultsDir = tmpDIR + "Results/"
-	tmpModels = tmpDIR + "tmpModels.csv"
 	modelsDir = tmpDIR + "Models/"
 
 	# print("runTrainTestOnFold")
@@ -298,8 +289,8 @@ def runTrainTestOnFold(i,args):
 
 	printInfo("Training Model on Fold " + str(i+1))
 	with open(args["cbkDir"]+args["projName"]+"/"+str(i)+"_train.txt", 'w') as f:
-		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
-		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'n', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
 	
 	modelsFile = tmpDIR + "Models" + str(i) + ".csv"
 	with open(modelsFile, 'w') as mf:
@@ -373,7 +364,7 @@ def runVQMM(args):
 		printTitle("Parallel train & test of folds")
 		partialRunTrainTestOnFold = partial(runTrainTestOnFold, args=args)
 		pool = multiprocessing.Pool(args["nbFolds"]) 
-		mandelImg = pool.map(partialRunTrainTestOnFold, range(args["nbFolds"])) #make our results with a map call
+		pool.map(partialRunTrainTestOnFold, range(args["nbFolds"])) #make our results with a map call
 		pool.close() #we are not adding any more processes
 		pool.join() #tell it to wait until all threads are done before going on
 
