@@ -459,7 +459,7 @@ This function executes the k-Means algorithm. The arguments are the
 data set and a matrix whose size correspond to the desired number of
 centers. The algorithm stops when the centers do not move.
 ---------------------------------------------------------------------- */
-#include "/usr/include/math.h"
+//#include "/usr/include/math.h"
 
 void 
 kMeans(const matrix *set, 
