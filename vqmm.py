@@ -4,12 +4,15 @@
 # E-mail	bayle.yann@live.fr
 # License   MIT
 # Created	09/09/2016
-# Updated	21/09/2016
+# Updated	04/10/2016
 # Version	2
+#
 # Object	Preprocess file from YAAFE and launch VQMM from Thibault Langlois
 #			You can find the latest version of his algorithm here:
 # 			https://bitbucket.org/ThibaultLanglois/vqmm/downloads
+#
 # OS 		Only work on UNIX for the moment
+#
 # Details 	- Remove header from CSV (5 lines)
 #			- Replace scientifc notation by float
 # 			- Replace commas by spaces
@@ -18,10 +21,14 @@
 # 			- Check minimum number of frames
 # 			- All non conform files are deplaced in the error folder
 #			- Manage folds and launch VQMM
-# MANUAL	1 Install YAAFE and analyse your songs in a folder ex: /path/YAAFE/
+#
+# Manual	1 Install YAAFE and analyse your songs in a folder ex: /path/YAAFE/
 # 			2 Download https://github.com/ybayle/vqmm
-# 			3 Launch: python vqmm.py -d /path/YAAFE/ -f /path/fileList.txt
-# TODOs		- Optimize code: 700ms/file for 1Mo/file 4800lines/file 13feat/line
+#			3 Create a fileList.txt containing path & class of YAAFE's files
+# 			4 Launch: python vqmm.py -d /path/YAAFE/ -f /path/fileList.txt
+#
+# TODOs		- Optimize: 700ms/file for ~1Mo/file ~4800lines/file 13feat/line
+#				on i7-3770k, 16Go RAM, 3.5GHz, 64bits, Debian 8.2
 #			- Tell user not to use "NOT_" in his class name or better manage it
 #			- Train/Test more folds
 #			- Make parallel: preprocess, each fold and test
@@ -31,6 +38,7 @@
 #			- Assert
 #			- parameterized epsilon for codebook
 #			- take in account global var verbose with -v
+#			- Write a txt file which indicates all param chosen
 # 
 
 import time
@@ -46,6 +54,8 @@ import subprocess
 import re
 import numpy as np
 import json
+import multiprocessing
+from functools import partial
 
 VERBOSE = False
 PRINTDEBUG = True
@@ -115,7 +125,7 @@ def validAndConvertFile(inDIR, outDIR, errDIR, filename):
 		finally:
 			outFile.close() 
 			if fileInvalid:
-				os.remove(outFileName)
+				# os.remove(outFileName) # TODO uncomment
 				if not os.path.exists(errDIR):
 					os.makedirs(errDIR)
 				shutil.move(inFileName, errFileName)
@@ -185,6 +195,47 @@ def printFile(fileName):
 def usage():
 	printError('You must indicate the folder where raw data from YAAFE are stored and the class file:\nvqmm.py ./data/ ./filelist.txt')
 
+def runTrainTestOnFold(i,args):
+	# TODO remove this duplicate :
+	fileListWithClass = args["fileListWithClass"]
+	tmpDIR = args["tmpDIR"]
+	randomSeed = str(args["randSeedCbk"])
+	codebookSize = str(args["cbkSize"])
+	codebookFile = args["analysisFolder"] + "codebook.cbk"
+	resultsDir = tmpDIR + "Results/"
+	tmpModels = tmpDIR + "tmpModels.csv"
+	modelsDir = tmpDIR + "Models/"
+
+	# print("runTrainTestOnFold")
+	# print("i " + str(i) + " args " + str(args))
+	trainFileList = args["foldsName"][i]
+	trainOn = list(set(args["foldsName"]) - set([trainFileList]))
+	tmpNb = [str(val) for val in range(1, args["nbFolds"]+1)]
+	tmpNb.remove(trainFileList[-5])
+	foldsNumber = ''.join(str(x) for x in tmpNb)
+	testFileList = args["tmpDIR"] + "testFolds_" + foldsNumber + ".csv"
+	os.system("cat " + " ".join(trainOn) + " > " + testFileList)
+
+	printTitle("Training Model on Fold " + str(i+1))
+	with open(args["analysisFolder"]+args["projName"]+"/"+str(i)+"_train.txt", 'w') as f:
+		# subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', args["epsilon"], '-codebook', codebookFile, '-make-tag-models'], stdout=f, stderr=f)
+	
+	modelsFile = tmpDIR + "Models" + str(i) + ".csv"
+	with open(modelsFile, 'w') as mf:
+		for className in args["classNames"]:
+			mf.write(modelsDir + className + "$"+ find_between_r(trainFileList, "/", ".") + ".mm\n")
+
+	printTitle("Testing Model on Fold " + str(i+1))
+	if not os.path.exists(resultsDir):
+		os.makedirs(resultsDir)
+	# printInfo("Approx 515ms per file")
+	with open(args["analysisFolder"]+args["projName"]+"/"+str(i)+"_test.txt", 'w') as f:
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList], stdout=f, stderr=f)
+	# os.remove(testFileList) # TODO uncomment
+	# os.remove(modelsFile) # TODO uncomment
+	printTitle("Fold " + str(i+1) + " tested")
+
 def runVQMM(args):
 	fileListWithClass = args["fileListWithClass"]
 	tmpDIR = args["tmpDIR"]
@@ -208,19 +259,19 @@ def runVQMM(args):
 	
 	if args["nbFolds"] == 1:
 		printTitle("Training Model")
-		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
+		subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', fileListWithClass, '-epsilon', args["epsilon"], '-smoothing', args["smoothing"], '-codebook', codebookFile, '-make-tag-models'])
 		
 		modelsFile = tmpDIR + "Models.csv"
 		os.system("readlink -f $(echo \"" + modelsDir + "*\") >> " + tmpModels)
 		os.system("sed -n '/NOT_/!p' " + tmpModels + " >> " + modelsFile)
-		os.remove(tmpModels)
+		# os.remove(tmpModels) # TODO uncomment
 		
 		printTitle("Testing Model")
 		if not os.path.exists(resultsDir):
 			os.makedirs(resultsDir)
 		printInfo("Approx 515ms per file")
 		subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', fileListWithClass])	
-		os.remove(modelsFile)
+		# os.remove(modelsFile) # TODO uncomment
 
 		printTitle("Results:")
 		displayedRes = False
@@ -236,30 +287,14 @@ def runVQMM(args):
 	else:
 		generateFolds(args)
 		printWarning("TODO manage inversion of Train and Test Set")
-		for i in range(0, args["nbFolds"]):
-			trainFileList = args["foldsName"][i]
-			trainOn = list(set(args["foldsName"]) - set([trainFileList]))
-			tmpNb = [str(val) for val in range(1, args["nbFolds"]+1)]
-			tmpNb.remove(trainFileList[-5])
-			foldsNumber = ''.join(str(x) for x in tmpNb)
-			testFileList = args["tmpDIR"] + "testFolds_" + foldsNumber + ".csv"
-			os.system("cat " + " ".join(trainOn) + " > " + testFileList)
 
-			printTitle("Training Model")
-			subprocess.call([args["pathVQMM"] + 'vqmm', '-quiet', 'y', '-output-dir', modelsDir, '-list-of-files', trainFileList, '-epsilon', '0.00001', '-codebook', codebookFile, '-make-tag-models'])
-			
-			modelsFile = tmpDIR + "Models" + str(i) + ".csv"
-			with open(modelsFile, 'w') as mf:
-				for className in args["classNames"]:
-					mf.write(modelsDir + className + "$"+ find_between_r(trainFileList, "/", ".") + ".mm\n")
+		# Parallel computing on each TrainTestFolds
+		partialRunTrainTestOnFold = partial(runTrainTestOnFold, args=args)
+		pool = multiprocessing.Pool(args["nbFolds"]) 
+		mandelImg = pool.map(partialRunTrainTestOnFold, range(args["nbFolds"])) #make our results with a map call
+		pool.close() #we are not adding any more processes
+		pool.join() #tell it to wait until all threads are done before going on
 
-			printTitle("Testing Model")
-			if not os.path.exists(resultsDir):
-				os.makedirs(resultsDir)
-			printInfo("Approx 515ms per file")
-			subprocess.call([args["pathVQMM"] + 'vqmm', '-tagify', '-output-dir', resultsDir, '-models', modelsFile, '-codebook', codebookFile, '-list-of-files', testFileList])
-			os.remove(testFileList)
-			os.remove(modelsFile)
 		printTitle("Results:")
 		printWarning("TODO display fig with results")
 
@@ -275,6 +310,8 @@ def preprocess(args):
 	projName = projName[projName.rindex("/")+1:] + "_"
 	projName = projName + str(args["cbkSize"]) + "cbkSize_"
 	projName = projName + str(args["randSeedCbk"]) + "RandCbk_"
+	projName = projName + str(args["epsilon"]) + "Eps_"
+	projName = projName + str(args["smoothing"]) + "Smooth_"
 	projName = projName + str(args["randSeedFold"]) + "RandFold_"
 	projName = projName + str(args["nbFolds"]) + "Fold"
 	if args["nbFolds"] > 1:
@@ -314,7 +351,7 @@ def preprocess(args):
 		os.system("ls " + outDIR + " > " + tmpFileNames)
 		with open(tmpFileNames) as f:
 			linesNoClass = f.readlines()
-		os.remove(tmpFileNames)
+		# os.remove(tmpFileNames) # TODO uncomment
 		with open(fileWithClass) as f:
 			linesWithClass = f.readlines()
 		curLine = 0
@@ -428,8 +465,29 @@ def gatherArgs(argv):
 		type=str,
 		metavar="PATHVQMM",
 		help="path to Thibault Langlois' VQMM folder")
+	parser.add_argument(
+		"-e",
+		"--epsilon",
+		type=float,
+		metavar="EPSILON",
+		help="Epsilon defines the stopping criteria of k-means. It must be >= 0.")
+	parser.add_argument(
+		"-m",
+		"--smoothing",
+		type=float,
+		metavar="SMOOTHING",
+		help="Models' smoothing parameter. The events that has \
+			not occured during training cannot have null probability. \
+			It corresponds to the probability mass which is allocated to \
+			events which have not occured during training. \
+			Ex: -m 0.1 attributes 10 percent of probability to those events. \
+			If it is close to zero, the model does not generalize. \
+			The lower the parameter the higher the precision \
+			The higher the paramter, the higher the recall. \
+			In principle this parameter should be < 0.5 \
+			It must varies between [0.0 ; 1.0]")
 	tmpArgs = parser.parse_args()
-	pathVQMM = "./ThibaultLanglois-VQMM/"
+	pathVQMM = "./ThibaultLanglois_VQMM/src/"
 	if tmpArgs.pathVQMM:
 		pathVQMM = tmpArgs.pathVQMM
 	inDIR = "./data/"
@@ -453,6 +511,22 @@ def gatherArgs(argv):
 	randSeedCbk = 50
 	if tmpArgs.seedCbk:
 		randSeedCbk = tmpArgs.seedCbk
+	epsilon = 0.00001
+	if tmpArgs.epsilon:
+		epsilon = tmpArgs.epsilon
+		if epsilon < 0:
+			epsilon = 0.00001
+			printWarning("Epsilon cannot be lower than 0\nEpsilon set to " + str(epsilon))
+	epsilon = str(epsilon)
+	smoothing = 0.000000001
+	if tmpArgs.smoothing:
+		smoothing = tmpArgs.smoothing
+		if smoothing < 0:
+			smoothing = 0.00001
+			printWarning("Smoothing cannot be lower than 0\nSmoothing set to " + str(smoothing))
+		elif smoothing >= 0.5:
+			printWarning("Unexpected behavior when Smoothing is greater than 0.5")
+	smoothing = str(smoothing)
 	cbkSize = 75
 	if tmpArgs.cbkSize:
 		cbkSize = tmpArgs.cbkSize
@@ -486,6 +560,8 @@ def gatherArgs(argv):
 	args["randSeedCbk"] = randSeedCbk
 	args["cbkSize"] = cbkSize
 	args["pathVQMM"] = pathVQMM
+	args["epsilon"] = epsilon
+	args["smoothing"] = smoothing
 	args["analysisFolder"] = "./analysis/"
 
 	return args
@@ -499,7 +575,7 @@ def generateFolds(args):
 	np.random.seed(randSeedFold)
 	with open(fileListWithClassJSON) as data_file:    
 		paths = json.load(data_file)
-	os.remove(fileListWithClassJSON)
+	# os.remove(fileListWithClassJSON) # TODO uncomment
 	tmpSelected = []
 	for i in range(0,args["nbFolds"]):
 		tmpSelected.append([])
@@ -547,7 +623,7 @@ def main(argv):
 	printInfo("Approx. 700ms per file: go grab a tea!")
 	args = preprocess(args)
 	runVQMM(args)
-	printInfo("More details available in " + args["analysisFolder"])
+	printInfo("More details available in " + os.path.abspath(args["analysisFolder"]))
 	printTitle("Finished in " + str(int(round(time.time() * 1000)) - begin) + "ms")
 
 if __name__ == "__main__":
